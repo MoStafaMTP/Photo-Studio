@@ -28,7 +28,7 @@ Detailed handoffs are available in:
 - Drag layers with optional Shift axis locking.
 - Move layers with arrow keys or Shift+Arrow for faster movement.
 - Add, duplicate, delete, select, group, resize, and reorder layers.
-- Use `Delete` to remove selected layers, `Ctrl + C`/`Ctrl + V` to copy and paste them, `Ctrl + Enter` to center them, and `Ctrl + B` to remove their backgrounds.
+- Use `Delete` to remove selected layers, `Ctrl + C`/`Ctrl + V` to copy and paste them, `Ctrl + Enter` to center them, and `Ctrl + B` to toggle their backgrounds off or on.
 - Per-layer shadows with opacity, angle, and distance controls.
 - Manual background removal for selected layers or the complete batch.
 - Undo and redo.
@@ -117,5 +117,7 @@ A focused browser suite passed 13 additional checks covering single-image and mu
 The shortcut and numeric Image Size update passed 10 browser checks covering physical-key detection on non-Latin layouts, focused-input handling, full-batch watermark application, slider/wheel/value synchronization, direct numeric entry, and the 300% limit.
 
 The layer keyboard shortcuts passed 12 browser checks covering multi-layer copy/paste, preserved editing state, independent pasted assets, group centering, background removal, multi-layer deletion, original-layer deletion, and the one-layer safety rule.
+
+The `Ctrl + B` toggle passed 6 browser checks covering mixed selections, first-press removal, second-press restoration, status feedback, and Remove BG control synchronization.
 
 `script.js` also passes `node --check`.

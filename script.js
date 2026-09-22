@@ -1168,18 +1168,15 @@ shadowToggle.addEventListener('click', () => {
   syncSelectedLayerControls(); drawActive(); setStatus(nextValue ? 'Shadow enabled for selected layers.' : 'Shadow removed from selected layers.');
 });
 removeBgButton.addEventListener('click', () => {
-  const item = files[activeIndex], selected = item ? getSelectedLayerEntities(item) : []; if (!selected.length) return;
-  saveHistory(); const nextValue = !selected.every((entity) => entity.data.removeBg);
-  selected.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.processed = null; if (entity.type === 'base') entity.data.smartPrep = null; });
-  syncSelectedLayerControls(); drawActive(); setStatus(nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.');
+  toggleSelectedLayerBackgrounds();
 });
-function removeBackgroundFromSelectedLayers() {
+function toggleSelectedLayerBackgrounds() {
   const item = files[activeIndex], selected = item ? getSelectedLayerEntities(item) : [];
   if (!selected.length) { setStatus('Select one or more layers first.'); return false; }
-  if (selected.every((entity) => entity.data.removeBg)) { setStatus('Background is already removed from the selected layers.'); return true; }
+  const nextValue = !selected.every((entity) => entity.data.removeBg);
   saveHistory();
-  selected.forEach((entity) => { entity.data.removeBg = true; entity.data.processed = null; if (entity.type === 'base') entity.data.smartPrep = null; });
-  syncSelectedLayerControls(); drawActive(); setStatus('Background removed from selected layers.');
+  selected.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.processed = null; if (entity.type === 'base') entity.data.smartPrep = null; });
+  syncSelectedLayerControls(); drawActive(); setStatus(nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.');
   return true;
 }
 function isLayerShortcutTypingTarget(target) {
@@ -1207,7 +1204,7 @@ document.addEventListener('keydown', (event) => {
   else if (action === 'center') {
     if (!selectedLayerIds.size) { setStatus('Select one or more layers first.'); return; }
     saveHistory(); centerSelectedLayerEntities('both'); drawActive(); setStatus('Selected layers centered horizontally and vertically.');
-  } else removeBackgroundFromSelectedLayers();
+  } else toggleSelectedLayerBackgrounds();
 }, true);
 removeAllBgButton.addEventListener('click', () => {
   if (!files.length) return;
