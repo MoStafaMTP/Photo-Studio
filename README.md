@@ -37,7 +37,9 @@ Detailed handoffs are available in:
 - Eight account-specific Saved Watermarks sections.
 - 49 bundled PNG templates available to every clone of the repository.
 - Upload, rename, select, disable, and delete personal watermark templates.
-- Apply watermark changes to the whole batch or Ctrl/Command-selected images.
+- Apply watermark changes only to the selected left-side image or Ctrl/Command-selected images.
+- Press `Ctrl + Alt + A` to select the complete batch and apply the active watermark template to every selected image.
+- Resize the active image smoothly in 1% mouse-wheel steps, or hold Shift for faster 5% steps.
 - Watermark opacity defaults to 100%.
 
 ### Listing workflow
@@ -107,5 +109,7 @@ Bundled watermark templates are stored in the repository and work on every syste
 ## Validation
 
 The Phase 1.2 browser regression suite passed 24 checks covering filename mapping, template resolution, safe-area measurement and persistence, foreground detection, background reconstruction, proportional fitting, centering, and 1576 × 1576 JPG export.
+
+A focused browser suite passed 13 additional checks covering single-image and multi-image watermark scope, `Ctrl + Alt + A` full-batch selection and application, thumbnail selection state, and normal/Shift mouse-wheel scaling.
 
 `script.js` also passes `node --check`.

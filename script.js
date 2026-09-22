@@ -151,8 +151,7 @@ let listingAutoPrompted = false;
 let refreshListingPreview = () => {};
 function createBatchImageId() { return globalThis.crypto?.randomUUID?.() || `image-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function watermarkTargetItems() {
-  const selected = files.filter((item) => selectedBatchImageIds.has(item.id));
-  return selected.length >= 2 ? selected : [...files];
+  return files.filter((item) => selectedBatchImageIds.has(item.id));
 }
 resizeWidth.value = '1576';
 resizeHeight.value = '1576';
@@ -271,7 +270,7 @@ function handleThumbnailSelection(index, event) {
   if (!additive) {
     selectedBatchImageIds = new Set([item.id]);
     selectImage(index, {preserveBatchSelection: true});
-    setStatus(`Watermark changes will apply to all ${files.length} image${files.length === 1 ? '' : 's'}.`);
+    setStatus(`Watermark changes will apply only to ${item.displayName || item.file.name}.`);
     return;
   }
   if (selectedBatchImageIds.has(item.id) && selectedBatchImageIds.size > 1) selectedBatchImageIds.delete(item.id);
@@ -282,10 +281,35 @@ function handleThumbnailSelection(index, event) {
     nextIndex = activeItem && selectedBatchImageIds.has(activeItem.id) ? activeIndex : files.findIndex((entry) => selectedBatchImageIds.has(entry.id));
   }
   selectImage(Math.max(0, nextIndex), {preserveBatchSelection: true});
+  const selectedItem = files.find((entry) => selectedBatchImageIds.has(entry.id));
   setStatus(selectedBatchImageIds.size >= 2
     ? `${selectedBatchImageIds.size} images selected for watermark changes.`
-    : `Watermark changes will apply to all ${files.length} image${files.length === 1 ? '' : 's'}.`);
+    : `Watermark changes will apply only to ${selectedItem?.displayName || selectedItem?.file?.name || 'the selected image'}.`);
 }
+
+window.addEventListener('keydown', async (event) => {
+  if (!event.ctrlKey || !event.altKey || event.key.toLowerCase() !== 'a') return;
+  event.preventDefault();
+  if (!files.length) {
+    setStatus('Upload images before selecting the batch.');
+    return;
+  }
+
+  selectedBatchImageIds = new Set(files.map((item) => item.id));
+  renderThumbs();
+  syncWatermarkControls();
+
+  const activeTemplate = selectedWatermarkSection != null && activeWatermarkTemplateId
+    ? findWatermarkTemplate(selectedWatermarkSection, activeWatermarkTemplateId)
+    : null;
+  if (!activeTemplate) {
+    setStatus(`All ${files.length} images selected. Choose a watermark template to apply.`);
+    return;
+  }
+
+  await selectWatermarkTemplate(selectedWatermarkSection, activeWatermarkTemplateId);
+  setStatus(`${activeTemplate.name} applied to all ${files.length} selected images.`);
+});
 
 function renderThumbs() {
   thumbList.innerHTML = '';
@@ -1038,11 +1062,11 @@ canvasWrap.addEventListener('wheel', (event) => {
   wheelHistoryTimer = setTimeout(() => { wheelHistoryActive = false; }, 250);
   const resizeGroup = selectedLayerIds.size > 1 || (selectedLayerIds.size === 1 && !selectedLayerIds.has('base'));
   if (resizeGroup) {
-    const step = event.shiftKey ? .15 : .05;
+    const step = event.shiftKey ? .05 : .01;
     scaleSelectedLayerEntities(event.deltaY < 0 ? 1 + step : 1 - step);
   } else {
     const current = files[activeIndex].scale ?? 100;
-    const step = event.shiftKey ? 15 : 5;
+    const step = event.shiftKey ? 5 : 1;
     files[activeIndex].scale = Math.max(10, Math.min(300, current + (event.deltaY < 0 ? step : -step)));
     imageScale.value = files[activeIndex].scale;
   }
@@ -1112,7 +1136,7 @@ function syncWatermarkControls() {
   const targets = watermarkTargetItems();
   const targetsWithWatermark = targets.filter((item) => item.watermarkImage);
   const enabled = Boolean(targetsWithWatermark.length) && targetsWithWatermark.every((item) => item.watermarkEnabled);
-  const scope = selectedBatchImageIds.size >= 2 ? 'selected images' : 'all images';
+  const scope = targets.length === 1 ? 'selected image' : 'selected images';
   watermarkToggleButton.disabled = !targetsWithWatermark.length;
   watermarkToggleButton.classList.toggle('is-disabled', !enabled);
   setIconControl(watermarkToggleButton, enabled ? 'eyeOff' : 'eye', `${enabled ? 'Disable' : 'Enable'} watermark for ${scope}`);
@@ -1126,7 +1150,7 @@ watermarkToggleButton.addEventListener('click', () => {
   const enabled = !targets.every((item) => item.watermarkEnabled);
   targets.forEach((item) => { item.watermarkEnabled = enabled; });
   updateWatermarkToggleButton(); drawActive();
-  const scope = selectedBatchImageIds.size >= 2 ? `${targets.length} selected images` : `all ${targets.length} image${targets.length === 1 ? '' : 's'}`;
+  const scope = `${targets.length} selected image${targets.length === 1 ? '' : 's'}`;
   setStatus(`Watermark ${enabled ? 'enabled' : 'disabled'} for ${scope}.`);
 });
 document.querySelector('.watermark-control').append(watermarkToggleButton);
@@ -1719,7 +1743,7 @@ async function selectWatermarkTemplate(sectionIndex, templateId) {
   syncWatermarkControls();
   drawActive();
   renderWatermarkLibrary();
-  const scope = selectedBatchImageIds.size >= 2 ? `${targets.length} selected images` : `all ${targets.length} image${targets.length === 1 ? '' : 's'}`;
+  const scope = `${targets.length} selected image${targets.length === 1 ? '' : 's'}`;
   setStatus(`${template.name} applied to ${scope}.`);
 }
 async function addWatermarkTemplates(sectionIndex, fileList) {

@@ -74,6 +74,8 @@ The product's visible bounding box is scaled with `contain` logic. Rotation is i
 
 After preparation, the normal editor controls remain available. The product can be dragged, moved with arrow keys, Shift-dragged on one axis, resized with the Image Size control or mouse wheel, rotated, flipped, centered, and given a per-layer shadow. The reconstructed background remains fixed while those product adjustments are made.
 
+Mouse-wheel resizing uses smooth 1% steps; holding Shift uses faster 5% steps. Watermark changes apply only to the images selected in the left panel, including a single selected image. `Ctrl + Alt + A` selects every image and immediately applies the active watermark template to the complete selection.
+
 Manual **Remove BG** or **Remove All BG** intentionally exits smart preparation for the affected base image and returns it to the manual background-removal workflow. Reset also clears smart preparation from the current image.
 
 ## Rendering and state
@@ -111,6 +113,8 @@ The automated browser suite passed 24 checks covering:
 - preservation of the 1576 × 1576 output size.
 
 The final exported image was also inspected visually. It showed the reconstructed studio gradient, product inside the detected clear band, and the complete bundled watermark over the final composition.
+
+A focused browser suite passed 13 additional checks for exact single-image and multi-image watermark targeting, `Ctrl + Alt + A` full-batch selection and application, selected thumbnail state, and 1%/5% mouse-wheel scaling.
 
 `node --check script.js` passes.
 
