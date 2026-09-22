@@ -78,6 +78,8 @@ Mouse-wheel resizing uses smooth 1% steps; holding Shift uses faster 5% steps. W
 
 The Image Size control includes a synchronized 10–300% numeric field. The full-batch shortcut listens for the physical A key during capture, allowing it to work with non-Latin keyboard layouts and while a form control has focus.
 
+Layer keyboard controls include `Delete` for selected-layer removal, `Ctrl + C` and `Ctrl + V` for the internal layer clipboard, `Ctrl + Enter` for horizontal and vertical group centering, and `Ctrl + B` for selected-layer background removal. Pasted layers retain their transforms, shadows, and background-removal state and receive independent image assets.
+
 Manual **Remove BG** or **Remove All BG** intentionally exits smart preparation for the affected base image and returns it to the manual background-removal workflow. Reset also clears smart preparation from the current image.
 
 ## Rendering and state
@@ -119,6 +121,8 @@ The final exported image was also inspected visually. It showed the reconstructe
 A focused browser suite passed 13 additional checks for exact single-image and multi-image watermark targeting, `Ctrl + Alt + A` full-batch selection and application, selected thumbnail state, and 1%/5% mouse-wheel scaling.
 
 The shortcut and numeric Image Size update passed 10 focused browser checks, including non-Latin key output, focused-input handling, full-batch watermark application, two-way value synchronization, and numeric limits.
+
+The layer shortcuts passed 12 focused browser checks covering multi-selection, copied state, independent pasted assets, group centering, background removal, deletion, and minimum-layer protection.
 
 `node --check script.js` passes.
 

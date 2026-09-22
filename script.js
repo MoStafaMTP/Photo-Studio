@@ -183,6 +183,8 @@ let activeIndex = -1;
 let dragOffset = { x: 0, y: 0 };
 let exporting = false;
 let selectedLayerIds = new Set(['base']);
+let layerClipboard = [];
+let layerClipboardPasteCount = 0;
 const undoStack = [];
 const redoStack = [];
 function cloneEditorItem(item) { return item ? {...item, layerOrder: [...(item.layerOrder || ['base', ...(item.layers || []).map((layer) => layer.id)])], layers: (item.layers || []).map((layer) => ({...layer}))} : null; }
@@ -804,6 +806,81 @@ function duplicateSelectedLayers() {
   selectedLayerIds = new Set(copies.map((layer) => layer.id));
   renderLayerList(); syncSelectedLayerControls(); drawActive(); setStatus(`${copies.length} layer${copies.length === 1 ? '' : 's'} duplicated.`);
 }
+function layerCopyDescriptor(item, id) {
+  if (id !== 'base') {
+    const source = item.layers.find((layer) => layer.id === id);
+    return source ? {...source, id: null, url: null, image: null, processed: null} : null;
+  }
+  const rect = getBaseLayerRect(item);
+  const descriptor = {id: null, file: item.file, name: item.displayName || item.file.name, url: null, image: item.image, x: rect.x, y: rect.y, scale: 100, fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: Boolean(item.removeBg), processed: null, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
+  const descriptorRect = getAddedLayerRect(descriptor);
+  const matchingFactor = descriptorRect.width && descriptorRect.height ? Math.min(rect.width / descriptorRect.width, rect.height / descriptorRect.height) : 1;
+  descriptor.scale = Math.max(10, Math.min(500, matchingFactor * 100));
+  descriptor.image = null;
+  return descriptor;
+}
+function copySelectedLayers() {
+  const item = files[activeIndex];
+  if (!item || !selectedLayerIds.size) { setStatus('Select one or more layers first.'); return false; }
+  layerClipboard = allLayerEntityIds(item)
+    .filter((id) => selectedLayerIds.has(id))
+    .map((id) => layerCopyDescriptor(item, id))
+    .filter(Boolean);
+  layerClipboardPasteCount = 0;
+  if (!layerClipboard.length) { setStatus('The selected layers could not be copied.'); return false; }
+  setStatus(`${layerClipboard.length} layer${layerClipboard.length === 1 ? '' : 's'} copied. Press Ctrl+V to paste.`);
+  return true;
+}
+async function pasteCopiedLayers() {
+  const item = files[activeIndex];
+  if (!item) { setStatus('Upload an image before pasting layers.'); return false; }
+  if (!layerClipboard.length) { setStatus('Copy one or more layers before pasting.'); return false; }
+  const assetResults = await Promise.allSettled(layerClipboard.map((entry) => loadDuplicateAsset(entry.file)));
+  if (assetResults.some((result) => result.status === 'rejected')) {
+    assetResults.forEach((result) => { if (result.status === 'fulfilled') URL.revokeObjectURL(result.value.url); });
+    setStatus('The copied layers could not be pasted.');
+    return false;
+  }
+  if (files[activeIndex] !== item || !files.includes(item)) {
+    assetResults.forEach((result) => URL.revokeObjectURL(result.value.url));
+    setStatus('Paste canceled because the active image changed.');
+    return false;
+  }
+  saveHistory();
+  layerClipboardPasteCount += 1;
+  const offset = 35 * layerClipboardPasteCount;
+  const copies = layerClipboard.map((entry, index) => ({
+    ...entry,
+    id: createLayerId(),
+    name: `${entry.name || 'Layer'} copy`.slice(0, 60),
+    url: assetResults[index].value.url,
+    image: assetResults[index].value.image,
+    processed: null,
+    x: (entry.x ?? canvas.width / 2) + offset,
+    y: (entry.y ?? canvas.height / 2) + offset
+  }));
+  item.layers.push(...copies);
+  normalizeLayerOrder(item);
+  selectedLayerIds = new Set(copies.map((layer) => layer.id));
+  renderLayerList(); syncSelectedLayerControls(); drawActive();
+  setStatus(`${copies.length} copied layer${copies.length === 1 ? '' : 's'} pasted.`);
+  return true;
+}
+function removeSelectedLayers() {
+  const item = files[activeIndex]; if (!item) return false;
+  const currentIds = allLayerEntityIds(item);
+  const removableIds = new Set(currentIds.filter((id) => selectedLayerIds.has(id)));
+  if (!removableIds.size) { setStatus('Select one or more layers first.'); return false; }
+  if (currentIds.length - removableIds.size < 1) { setStatus('At least one layer must remain in the image.'); return false; }
+  const removedBase = removableIds.has('base');
+  saveHistory(); item.layers = item.layers.filter((layer) => !removableIds.has(layer.id));
+  if (removedBase) item.baseRemoved = true;
+  normalizeLayerOrder(item);
+  const remainingIds = allLayerEntityIds(item);
+  selectedLayerIds = new Set([remainingIds[remainingIds.length - 1]]);
+  renderLayerList(); syncSelectedLayerControls(); drawActive(); setStatus(`${removableIds.size} layer${removableIds.size === 1 ? '' : 's'} removed.`);
+  return true;
+}
 function arrangeSelectedLayers() {
   const item = files[activeIndex]; if (!item || selectedLayerIds.size < 2) { setStatus('Select at least two layers to arrange.'); return; }
   const entities = getSelectedLayerEntities(item);
@@ -1025,18 +1102,7 @@ layerGroup.querySelector('[data-layer-action="duplicate"]').addEventListener('cl
   saveHistory(); duplicateSelectedLayers();
 });
 layerGroup.querySelector('[data-layer-action="remove"]').addEventListener('click', () => {
-  const item = files[activeIndex]; if (!item) return;
-  const currentIds = allLayerEntityIds(item);
-  const removableIds = new Set(currentIds.filter((id) => selectedLayerIds.has(id)));
-  if (!removableIds.size) { setStatus('Select one or more layers first.'); return; }
-  if (currentIds.length - removableIds.size < 1) { setStatus('At least one layer must remain in the image.'); return; }
-  const removedBase = removableIds.has('base');
-  saveHistory(); item.layers = item.layers.filter((layer) => !removableIds.has(layer.id));
-  if (removedBase) item.baseRemoved = true;
-  normalizeLayerOrder(item);
-  const remainingIds = allLayerEntityIds(item);
-  selectedLayerIds = new Set([remainingIds[remainingIds.length - 1]]);
-  renderLayerList(); syncSelectedLayerControls(); drawActive(); setStatus(`${removableIds.size} layer${removableIds.size === 1 ? '' : 's'} removed.`);
+  removeSelectedLayers();
 });
 renderLayerList(); updateRemoveBackgroundControls();
 let imageDrag = null;
@@ -1107,6 +1173,42 @@ removeBgButton.addEventListener('click', () => {
   selected.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.processed = null; if (entity.type === 'base') entity.data.smartPrep = null; });
   syncSelectedLayerControls(); drawActive(); setStatus(nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.');
 });
+function removeBackgroundFromSelectedLayers() {
+  const item = files[activeIndex], selected = item ? getSelectedLayerEntities(item) : [];
+  if (!selected.length) { setStatus('Select one or more layers first.'); return false; }
+  if (selected.every((entity) => entity.data.removeBg)) { setStatus('Background is already removed from the selected layers.'); return true; }
+  saveHistory();
+  selected.forEach((entity) => { entity.data.removeBg = true; entity.data.processed = null; if (entity.type === 'base') entity.data.smartPrep = null; });
+  syncSelectedLayerControls(); drawActive(); setStatus('Background removed from selected layers.');
+  return true;
+}
+function isLayerShortcutTypingTarget(target) {
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target?.isContentEditable) return true;
+  return target instanceof HTMLInputElement && target.type !== 'checkbox';
+}
+document.addEventListener('keydown', (event) => {
+  if (activeIndex < 0 || event.repeat || isLayerShortcutTypingTarget(event.target)) return;
+  const listingOverlay = document.querySelector('#listing-panel');
+  if (listingOverlay && !listingOverlay.hidden) return;
+  const commandKey = event.ctrlKey || event.metaKey;
+  const physicalKey = event.code;
+  let action = null;
+  if (!commandKey && !event.altKey && event.key === 'Delete') action = 'delete';
+  else if (commandKey && !event.altKey && physicalKey === 'KeyC') action = 'copy';
+  else if (commandKey && !event.altKey && physicalKey === 'KeyV') action = 'paste';
+  else if (commandKey && !event.altKey && (physicalKey === 'Enter' || event.key === 'Enter')) action = 'center';
+  else if (commandKey && !event.altKey && physicalKey === 'KeyB') action = 'remove-background';
+  if (!action) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (action === 'delete') removeSelectedLayers();
+  else if (action === 'copy') copySelectedLayers();
+  else if (action === 'paste') pasteCopiedLayers().catch(() => setStatus('The copied layers could not be pasted.'));
+  else if (action === 'center') {
+    if (!selectedLayerIds.size) { setStatus('Select one or more layers first.'); return; }
+    saveHistory(); centerSelectedLayerEntities('both'); drawActive(); setStatus('Selected layers centered horizontally and vertically.');
+  } else removeBackgroundFromSelectedLayers();
+}, true);
 removeAllBgButton.addEventListener('click', () => {
   if (!files.length) return;
   files.forEach((item) => {
