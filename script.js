@@ -55,6 +55,7 @@ const fitSelect = document.querySelector('#fit-select');
 const resizeWidth = document.querySelector('#resize-width');
 const resizeHeight = document.querySelector('#resize-height');
 const imageScale = document.querySelector('#image-scale');
+const imageScaleValue = document.querySelector('#image-scale-value');
 const watermarkGap = document.querySelector('#watermark-gap');
 const removeBgButton = document.querySelector('#remove-bg');
 removeBgButton.textContent = 'Remove BG'; removeBgButton.title = 'Remove background';
@@ -156,8 +157,17 @@ function watermarkTargetItems() {
 resizeWidth.value = '1576';
 resizeHeight.value = '1576';
 fitSelect.value = 'contain';
-imageScale.value = 100;
 imageScale.max = 300;
+function setImageScaleInputs(value) {
+  const minimum = Number(imageScale.min) || 10;
+  const maximum = Number(imageScale.max) || 300;
+  const parsed = Number(value);
+  const normalized = Math.max(minimum, Math.min(maximum, Number.isFinite(parsed) ? Math.round(parsed) : 100));
+  imageScale.value = String(normalized);
+  imageScaleValue.value = String(normalized);
+  return normalized;
+}
+setImageScaleInputs(100);
 watermarkGap.value = 0;
 watermarkSize.style.display = 'none';
 watermarkGap.style.display = 'none';
@@ -179,7 +189,7 @@ function cloneEditorItem(item) { return item ? {...item, layerOrder: [...(item.l
 function snapshot() { return { item: activeIndex >= 0 ? cloneEditorItem(files[activeIndex]) : null, fit: fitSelect.value, imageScale: imageScale.value, width: resizeWidth.value, height: resizeHeight.value, shadowAngle: shadowAngle.value, shadowDistance: shadowDistance.value, shadowStrength: shadowStrength.value, backgroundMode, backgroundColor: backgroundColor.value, movementLock: movementLock.value }; }
 function updateHistoryButtons() { undoButton.disabled = !undoStack.length; redoButton.disabled = !redoStack.length; }
 function saveHistory() { if (activeIndex < 0) return; undoStack.push(snapshot()); if (undoStack.length > 50) undoStack.shift(); redoStack.length = 0; updateHistoryButtons(); }
-function restore(snapshotState) { if (!snapshotState?.item || activeIndex < 0) return; Object.assign(files[activeIndex], snapshotState.item); fitSelect.value = snapshotState.fit; imageScale.value = snapshotState.imageScale; resizeWidth.value = snapshotState.width; resizeHeight.value = snapshotState.height; shadowStrength.value = snapshotState.shadowStrength; shadowAngle.value = snapshotState.shadowAngle ?? 90; angleValue.textContent = shadowAngle.value + '°'; shadowDistance.value = snapshotState.shadowDistance ?? 18; distanceValue.textContent = shadowDistance.value + 'px'; backgroundMode = snapshotState.backgroundMode ?? 'color'; backgroundColor.value = snapshotState.backgroundColor ?? '#ffffff'; backgroundColor.disabled = backgroundMode !== 'color'; movementLock.value = snapshotState.movementLock ?? 'none'; backgroundGroup.querySelectorAll('[data-background]').forEach(button => button.classList.toggle('active', button.dataset.background === backgroundMode)); const validLayerIds = new Set(allLayerEntityIds(files[activeIndex])); selectedLayerIds = new Set([...selectedLayerIds].filter((id) => validLayerIds.has(id))); if (!selectedLayerIds.size && validLayerIds.size) selectedLayerIds.add([...validLayerIds].at(-1)); renderLayerList(); syncSelectedLayerControls(); drawActive(); updateHistoryButtons(); }
+function restore(snapshotState) { if (!snapshotState?.item || activeIndex < 0) return; Object.assign(files[activeIndex], snapshotState.item); fitSelect.value = snapshotState.fit; setImageScaleInputs(snapshotState.imageScale); resizeWidth.value = snapshotState.width; resizeHeight.value = snapshotState.height; shadowStrength.value = snapshotState.shadowStrength; shadowAngle.value = snapshotState.shadowAngle ?? 90; angleValue.textContent = shadowAngle.value + '°'; shadowDistance.value = snapshotState.shadowDistance ?? 18; distanceValue.textContent = shadowDistance.value + 'px'; backgroundMode = snapshotState.backgroundMode ?? 'color'; backgroundColor.value = snapshotState.backgroundColor ?? '#ffffff'; backgroundColor.disabled = backgroundMode !== 'color'; movementLock.value = snapshotState.movementLock ?? 'none'; backgroundGroup.querySelectorAll('[data-background]').forEach(button => button.classList.toggle('active', button.dataset.background === backgroundMode)); const validLayerIds = new Set(allLayerEntityIds(files[activeIndex])); selectedLayerIds = new Set([...selectedLayerIds].filter((id) => validLayerIds.has(id))); if (!selectedLayerIds.size && validLayerIds.size) selectedLayerIds.add([...validLayerIds].at(-1)); renderLayerList(); syncSelectedLayerControls(); drawActive(); updateHistoryButtons(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); setStatus('Undo.'); }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); setStatus('Redo.'); }
 const headerActions = document.querySelector('.header-actions');
@@ -287,9 +297,7 @@ function handleThumbnailSelection(index, event) {
     : `Watermark changes will apply only to ${selectedItem?.displayName || selectedItem?.file?.name || 'the selected image'}.`);
 }
 
-window.addEventListener('keydown', async (event) => {
-  if (!event.ctrlKey || !event.altKey || event.key.toLowerCase() !== 'a') return;
-  event.preventDefault();
+async function selectAllBatchImagesAndApplyWatermark() {
   if (!files.length) {
     setStatus('Upload images before selecting the batch.');
     return;
@@ -309,7 +317,15 @@ window.addEventListener('keydown', async (event) => {
 
   await selectWatermarkTemplate(selectedWatermarkSection, activeWatermarkTemplateId);
   setStatus(`${activeTemplate.name} applied to all ${files.length} selected images.`);
-});
+}
+document.addEventListener('keydown', (event) => {
+  const isAKey = event.code === 'KeyA' || (event.key || '').toLowerCase() === 'a';
+  if (!event.ctrlKey || !event.altKey || !isAKey) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.repeat) return;
+  selectAllBatchImagesAndApplyWatermark().catch(() => setStatus('All images were selected, but the active watermark could not be applied.'));
+}, true);
 
 function renderThumbs() {
   thumbList.innerHTML = '';
@@ -702,7 +718,7 @@ function syncSelectedLayerControls() {
   const selected = item ? getSelectedLayerEntities(item) : [];
   const primary = selected[0];
   if (primary) {
-    imageScale.value = Math.round(primary.data.scale ?? 100);
+    setImageScaleInputs(primary.data.scale ?? 100);
     fitSelect.value = primary.data.fit || 'contain';
     shadowAngle.value = primary.data.shadowAngle ?? 90;
     angleValue.textContent = shadowAngle.value + '°';
@@ -762,7 +778,7 @@ function scaleSelectedLayerEntities(factor) {
     setLayerEntityCenter(item, entity.id, bounds.x + (rect.x - bounds.x) * factor, bounds.y + (rect.y - bounds.y) * factor);
     if (entity.type === 'base') {
       item.scale = Math.max(10, Math.min(300, (item.scale ?? 100) * factor));
-      imageScale.value = item.scale;
+      setImageScaleInputs(item.scale);
     } else {
       entity.data.scale = Math.max(10, Math.min(500, (entity.data.scale ?? 100) * factor));
     }
@@ -801,7 +817,7 @@ function arrangeSelectedLayers() {
       if (entity.type === 'base') item.scale = Math.max(10, (item.scale ?? 100) * factor);
       else entity.data.scale = Math.max(10, (entity.data.scale ?? 100) * factor);
     });
-    imageScale.value = item.scale;
+    setImageScaleInputs(item.scale);
     rects = entities.map((entity) => ({entity, rect: getLayerEntityRect(item, entity.id)}));
   }
   const totalWidth = rects.reduce((sum, entry) => sum + entry.rect.width, 0) + gap * (rects.length - 1);
@@ -865,10 +881,17 @@ fitSelect.addEventListener('change', () => {
   saveHistory(); selected.forEach((entity) => { entity.data.fit = fitSelect.value; }); drawActive(); setStatus(`Fit mode applied to ${selected.length > 1 ? 'selected layers' : 'layer'}.`);
 });
 imageScale.addEventListener('pointerdown', () => { if (selectedLayerIds.size) saveHistory(); });
-imageScale.addEventListener('input', () => {
+function applyImageScale(value) {
   const item = files[activeIndex], selected = item ? getSelectedLayerEntities(item) : []; if (!selected.length) return;
-  const nextScale = Number(imageScale.value); selected.forEach((entity) => { entity.data.scale = nextScale; }); drawActive();
+  const nextScale = setImageScaleInputs(value); selected.forEach((entity) => { entity.data.scale = nextScale; }); drawActive();
+}
+imageScale.addEventListener('input', () => applyImageScale(imageScale.value));
+imageScaleValue.addEventListener('focus', () => { if (selectedLayerIds.size) saveHistory(); });
+imageScaleValue.addEventListener('input', () => {
+  const value = Number(imageScaleValue.value);
+  if (Number.isFinite(value) && value >= Number(imageScale.min) && value <= Number(imageScale.max)) applyImageScale(value);
 });
+imageScaleValue.addEventListener('change', () => applyImageScale(imageScaleValue.value || imageScale.value));
 resizeWidth.addEventListener('input', () => { saveHistory(); drawActive(); }); resizeHeight.addEventListener('input', () => { saveHistory(); drawActive(); }); watermarkGap.addEventListener('input', drawActive); shadowStrength.addEventListener('pointerdown', () => saveHistory()); shadowStrength.addEventListener('input', () => { const value = Number(shadowStrength.value); const item = files[activeIndex]; if (item) getSelectedLayerEntities(item).forEach((entity) => { entity.data.shadowStrength = value; }); drawActive(); }); watermarkSize.addEventListener('input', () => { watermarkGap.value = watermarkSize.value; drawActive(); }); opacityInput.addEventListener('input', () => { const value = Number(opacityInput.value); watermarkTargetItems().forEach((item) => { if (item.watermarkImage) item.watermarkOpacity = value; }); drawWatermark(); });
 centerImage.addEventListener('click', () => { if (!selectedLayerIds.size) return; saveHistory(); centerSelectedLayerEntities('both'); drawActive(); setStatus('Selected layers centered horizontally and vertically.'); });
 centerHorizontal.addEventListener('click', () => { if (!selectedLayerIds.size) return; saveHistory(); centerSelectedLayerEntities('x'); drawActive(); setStatus('Selected layers centered horizontally.'); });
@@ -1068,7 +1091,7 @@ canvasWrap.addEventListener('wheel', (event) => {
     const current = files[activeIndex].scale ?? 100;
     const step = event.shiftKey ? 5 : 1;
     files[activeIndex].scale = Math.max(10, Math.min(300, current + (event.deltaY < 0 ? step : -step)));
-    imageScale.value = files[activeIndex].scale;
+    setImageScaleInputs(files[activeIndex].scale);
   }
   syncSelectedLayerControls(); drawActive();
   setStatus(resizeGroup ? 'Selected layers resized together.' : `Image size: ${files[activeIndex].scale}%`);
@@ -1912,8 +1935,8 @@ exportAll.addEventListener('click', async () => {
   } catch { setStatus('Batch export failed. Reload the project through its local web server and try again.'); }
   finally { exportAll.disabled = !files.length; }
 });
-document.querySelector('#reset-editor').addEventListener('click', () => { if (activeIndex < 0) return; files[activeIndex].rotation = 0; files[activeIndex].mirror = false; files[activeIndex].flipY = false; files[activeIndex].offsetX = 0; files[activeIndex].offsetY = 0; files[activeIndex].removeBg = false; files[activeIndex].processed = null; files[activeIndex].shadow = false; files[activeIndex].shadowAngle = 90; files[activeIndex].shadowDistance = 18; files[activeIndex].shadowStrength = 80; files[activeIndex].fit = 'contain'; fitSelect.value = 'contain'; imageScale.value = 100; resizeWidth.value = 1576; resizeHeight.value = 1576; watermarkImageInput.value = ''; watermarkSize.value = 0; watermarkGap.value = 0; shadowAngle.value = 90; angleValue.textContent = '90°'; shadowStrength.value = 80; shadowToggle.textContent = 'Add shadow'; shadowToggle.classList.remove('active'); watermark.style.background = ''; watermark.style.width = ''; watermark.style.height = ''; watermark.style.fontSize = ''; watermark.style.left = '50%'; watermark.style.top = '50%'; removeBgButton.classList.remove('active'); syncSelectedLayerControls(); drawActive(); setStatus('Current image reset.'); });
-document.querySelector('#reset-editor').addEventListener('click', () => { if (activeIndex < 0) return; files[activeIndex].scale = 100; imageScale.value = 100; drawActive(); });
+document.querySelector('#reset-editor').addEventListener('click', () => { if (activeIndex < 0) return; files[activeIndex].rotation = 0; files[activeIndex].mirror = false; files[activeIndex].flipY = false; files[activeIndex].offsetX = 0; files[activeIndex].offsetY = 0; files[activeIndex].removeBg = false; files[activeIndex].processed = null; files[activeIndex].shadow = false; files[activeIndex].shadowAngle = 90; files[activeIndex].shadowDistance = 18; files[activeIndex].shadowStrength = 80; files[activeIndex].fit = 'contain'; fitSelect.value = 'contain'; setImageScaleInputs(100); resizeWidth.value = 1576; resizeHeight.value = 1576; watermarkImageInput.value = ''; watermarkSize.value = 0; watermarkGap.value = 0; shadowAngle.value = 90; angleValue.textContent = '90°'; shadowStrength.value = 80; shadowToggle.textContent = 'Add shadow'; shadowToggle.classList.remove('active'); watermark.style.background = ''; watermark.style.width = ''; watermark.style.height = ''; watermark.style.fontSize = ''; watermark.style.left = '50%'; watermark.style.top = '50%'; removeBgButton.classList.remove('active'); syncSelectedLayerControls(); drawActive(); setStatus('Current image reset.'); });
+document.querySelector('#reset-editor').addEventListener('click', () => { if (activeIndex < 0) return; files[activeIndex].scale = 100; setImageScaleInputs(100); drawActive(); });
 document.querySelector('#reset-editor').addEventListener('click', () => { shadowDistance.value = 18; distanceValue.textContent = '18px'; });
 document.querySelector('#reset-editor').addEventListener('click', updateRemoveBackgroundControls);
 document.querySelector('#reset-editor').addEventListener('click', () => { const item = files[activeIndex]; if (item) item.smartPrep = null; });

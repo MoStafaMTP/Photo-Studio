@@ -40,6 +40,7 @@ Detailed handoffs are available in:
 - Apply watermark changes only to the selected left-side image or Ctrl/Command-selected images.
 - Press `Ctrl + Alt + A` to select the complete batch and apply the active watermark template to every selected image.
 - Resize the active image smoothly in 1% mouse-wheel steps, or hold Shift for faster 5% steps.
+- Read or enter the current 10–300% image size in the number field beside the Image Size slider.
 - Watermark opacity defaults to 100%.
 
 ### Listing workflow
@@ -111,5 +112,7 @@ Bundled watermark templates are stored in the repository and work on every syste
 The Phase 1.2 browser regression suite passed 24 checks covering filename mapping, template resolution, safe-area measurement and persistence, foreground detection, background reconstruction, proportional fitting, centering, and 1576 × 1576 JPG export.
 
 A focused browser suite passed 13 additional checks covering single-image and multi-image watermark scope, `Ctrl + Alt + A` full-batch selection and application, thumbnail selection state, and normal/Shift mouse-wheel scaling.
+
+The shortcut and numeric Image Size update passed 10 browser checks covering physical-key detection on non-Latin layouts, focused-input handling, full-batch watermark application, slider/wheel/value synchronization, direct numeric entry, and the 300% limit.
 
 `script.js` also passes `node --check`.
