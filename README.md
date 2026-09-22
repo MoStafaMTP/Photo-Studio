@@ -1,0 +1,111 @@
+# Photo Studio
+
+Photo Studio is a browser-based product-image editor and eBay listing preparation tool. It supports batch editing, layered compositions, reusable watermark libraries, automatic filename-based watermark selection, and smart product positioning inside watermark-safe areas.
+
+The application runs locally in the browser with plain HTML, CSS, and JavaScript. It has no build step, framework, backend, or package dependency.
+
+## Current milestone
+
+The repository contains **Phase 1.2 — Smart Image Preparation Engine**.
+
+- **Phase 1:** Manual batch image editor, layers, transforms, background removal, shadows, saved watermarks, and export.
+- **Phase 1.1:** Listing workflow with account/material selection and filename-based automatic watermarking.
+- **Phase 1.2:** Product separation, watermark safe-area analysis, automatic scaling and positioning, background reconstruction, and final listing export.
+
+Detailed handoffs are available in:
+
+- [`PHASE_1_HANDOFF.md`](PHASE_1_HANDOFF.md)
+- [`PHASE_1_1_HANDOFF.md`](PHASE_1_1_HANDOFF.md)
+- [`PHASE_1_2_HANDOFF.md`](PHASE_1_2_HANDOFF.md)
+
+## Features
+
+### Editing
+
+- Upload one or many JPG, PNG, or WebP images.
+- 1576 × 1576 default output canvas.
+- Resize, rotate in 15-degree steps, and flip horizontally or vertically.
+- Drag layers with optional Shift axis locking.
+- Move layers with arrow keys or Shift+Arrow for faster movement.
+- Add, duplicate, delete, select, group, resize, and reorder layers.
+- Per-layer shadows with opacity, angle, and distance controls.
+- Manual background removal for selected layers or the complete batch.
+- Undo and redo.
+
+### Watermarks
+
+- Eight account-specific Saved Watermarks sections.
+- 49 bundled PNG templates available to every clone of the repository.
+- Upload, rename, select, disable, and delete personal watermark templates.
+- Apply watermark changes to the whole batch or Ctrl/Command-selected images.
+- Watermark opacity defaults to 100%.
+
+### Listing workflow
+
+- Select an eBay account and product material.
+- Detect `DB`, `PB`, `DPB`, `DT`, `PT`, `DPT`, `DTB`, `PTB`, and `DPTB` filename codes.
+- Select Main, Passenger Side, or Normal templates automatically.
+- Review every image and resolved template before processing.
+- Export a complete account/material listing ZIP.
+
+### Smart preparation
+
+- Separate products from edge-connected studio backgrounds locally in the browser.
+- Reconstruct the background behind the product's original position.
+- Analyze each watermark's alpha channel to find its largest clear horizontal band.
+- Fit the complete product proportionally inside that safe area without cropping.
+- Center the product horizontally and vertically in the available area.
+- Review and edit top and bottom margins in the Watermark Template Manager.
+- Save margin overrides in IndexedDB.
+- Preserve a full-image fallback when reliable separation is not possible.
+
+### Export
+
+- JPG, PNG, and WebP output.
+- Export the current image.
+- Export the complete batch as a browser-generated ZIP.
+- Export final eBay listing images through the Listing workflow.
+
+## Run locally
+
+You can open `index.html` directly in a modern Chromium-based browser. A local static server is recommended for consistent browser storage and download behavior.
+
+With Python installed:
+
+```powershell
+cd C:\path\to\Photo-Studio
+python -m http.server 8000
+```
+
+Then open <http://localhost:8000/>.
+
+## Project structure
+
+| Path | Purpose |
+| --- | --- |
+| `index.html` | Application shell and Listing interface. |
+| `script.js` | Editor, layers, watermark library, smart preparation, and export logic. |
+| `styles.css` | Base editor styling. |
+| `viewport.css` | Final responsive layout and Listing UI styling. |
+| `watermark-assets.js` | Portable embedded copies of all bundled watermark PNGs. |
+| Account folders | Original account-specific watermark PNG files. |
+| `PHASE_*_HANDOFF.md` | Feature and implementation documentation for each milestone. |
+
+## Browser storage
+
+Personal watermark uploads and safe-area overrides are stored in the browser's IndexedDB database named `photo-studio-assets`. They persist on that browser profile but are not committed to Git.
+
+Bundled watermark templates are stored in the repository and work on every system.
+
+## Technical notes
+
+- Canvas rendering uses the real export dimensions while CSS fits the preview to the browser viewport.
+- ZIP files are generated locally without a third-party archive library.
+- Smart product separation is optimized for clean or gently graded marketplace backgrounds. Difficult scenes use a non-destructive full-image fallback marked **Review fit**.
+- No uploaded product images leave the browser.
+
+## Validation
+
+The Phase 1.2 browser regression suite passed 24 checks covering filename mapping, template resolution, safe-area measurement and persistence, foreground detection, background reconstruction, proportional fitting, centering, and 1576 × 1576 JPG export.
+
+`script.js` also passes `node --check`.

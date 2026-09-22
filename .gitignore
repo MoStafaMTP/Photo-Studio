@@ -1,0 +1,19 @@
+# Operating-system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors and dependencies
+.vscode/
+.idea/
+node_modules/
+
+# Logs and local test output
+*.log
+.tmp-*
+.chrome-*
+.edge-*
+
+# Frozen phase archives are stored outside the source repository
+Photo-Studio-Phase-*-Backup-*.zip
+Photo-Studio-Phase-*-Backup-*.zip.sha256

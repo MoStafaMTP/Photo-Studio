@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Luma image studio — edit and export product images." />
+    <title>Photo Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="viewport.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="logo" href="#studio" aria-label="Photo Studio"><span class="logo-mark">✦</span> Photo Studio</a>
+      <button class="listing-nav-button" id="open-listing" type="button"><span aria-hidden="true">✦</span><span class="listing-nav-label">Listing</span></button>
+      <div class="header-actions"><label class="header-export-control"><span>Export</span><select id="export-format"><option value="png">PNG</option><option value="jpg" selected>JPG</option><option value="webp">WEBP</option></select></label></div>
+    </header>
+    <main id="studio">
+      <section class="studio-section">
+        <div class="editor-shell">
+          <aside class="editor-sidebar">
+            <div class="editor-sidebar-title"><strong>New project</strong><span id="image-count">0 images</span></div>
+            <label class="upload-drop" for="image-input"><span class="upload-icon small">↑</span><strong>Upload images</strong><small>JPG, PNG or WEBP · multiple files</small></label>
+            <input id="image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
+            <div class="thumb-list" id="thumb-list"><div class="empty-state">Your uploaded images<br>will appear here.</div></div>
+            <div class="editor-actions"><button class="editor-button secondary" id="export-one" disabled>Export current <span>↓</span></button><button class="editor-button primary" id="export-all" disabled>Export Batch <span>↓</span></button></div>
+          </aside>
+          <div class="editor-workspace">
+            <div class="editor-toolbar"><div class="toolbar-group"><span class="toolbar-label">Rotate</span><button class="icon-button" id="rotate-left" title="Rotate left 15 degrees">↶</button><button class="icon-button" id="rotate-right" title="Rotate right 15 degrees">↷</button><button class="icon-button" id="mirror-button" type="button" title="Flip horizontally" aria-label="Flip horizontally"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 7 5 5-5 5V7Zm18 0-5 5 5 5V7Z"/><path d="M12 2v2m0 4v2m0 4v2m0 4v2"/></svg></button><button class="icon-button" id="vertical-flip" type="button" title="Flip vertically" aria-label="Flip vertically"><svg class="flip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 3 5 5 5-5H7Zm0 18 5-5 5 5H7Z"/><path d="M2 12h2m4 0h2m4 0h2m4 0h2"/></svg></button><button class="tool-toggle" id="center-image" type="button">Center</button></div><select id="fit-select" hidden><option value="contain">Fit</option><option value="cover">Fill</option></select><div class="toolbar-group"><span class="toolbar-label">Image size</span><input id="image-scale" type="range" min="10" max="100" value="80" title="Image size" /></div><div class="toolbar-group"><span class="toolbar-label">Resize</span><input class="size-input" id="resize-width" type="number" min="64" max="5000" placeholder="W" /><span class="size-x">×</span><input class="size-input" id="resize-height" type="number" min="64" max="5000" placeholder="H" /></div><div class="toolbar-group shadow-control"><span class="toolbar-label">Shadow</span><button class="tool-toggle" id="shadow-toggle" type="button">Add shadow</button><input id="shadow-strength" type="range" min="0" max="100" value="80" title="Shadow intensity" /></div><div class="toolbar-group"><button class="tool-toggle" id="remove-bg" type="button">Remove background</button></div><div class="toolbar-group watermark-control"><span class="toolbar-label">Watermark</span><label class="image-watermark-label" for="watermark-image-input">＋ image</label><input id="watermark-image-input" type="file" accept="image/png,image/jpeg,image/webp" hidden /><input id="watermark-size" type="range" min="5" max="100" value="100" title="Watermark size" /><input class="gap-input" id="watermark-gap" type="number" min="0" max="1000" value="50" title="Watermark gap in pixels" /><input id="watermark-opacity" type="range" min="0" max="100" value="100" title="Watermark opacity" /></div></div>
+            <div class="canvas-wrap" id="canvas-wrap"><div class="canvas-empty" id="canvas-empty"><h3>Drop images to begin</h3><p>Upload multiple images and edit them one by one.</p><label class="button button-primary" for="image-input">Choose images <span>↗</span></label></div><canvas id="editor-canvas" hidden></canvas><div class="canvas-watermark" id="canvas-watermark" hidden></div></div>
+            <div class="editor-footer"><span id="editor-status">Ready when you are.</span><button class="reset-button" id="reset-editor">Reset current image</button></div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <section class="listing-overlay" id="listing-panel" role="dialog" aria-modal="true" aria-labelledby="listing-title" hidden>
+      <div class="listing-dialog">
+        <header class="listing-dialog-header">
+          <div>
+            <span class="listing-kicker">eBay workflow</span>
+            <h2 id="listing-title">Prepare listing images</h2>
+            <p>Choose the account and material. Photo Studio will match each filename to the correct watermark.</p>
+          </div>
+          <button class="listing-close" id="close-listing" type="button" aria-label="Close Listing">×</button>
+        </header>
+        <div class="listing-questions">
+          <label class="listing-field">
+            <span><b>1</b> Which account do you want to list on?</span>
+            <select id="listing-account"><option value="">Choose an account</option></select>
+          </label>
+          <label class="listing-field">
+            <span><b>2</b> What is the material of these images?</span>
+            <select id="listing-material">
+              <option value="">Choose a material</option>
+              <option value="genuine-leather-solid">Genuine Leather Solid</option>
+              <option value="genuine-leather-perforated">Genuine Leather Perforated</option>
+              <option value="perforated">Perforated</option>
+              <option value="other-material">Other Material</option>
+            </select>
+          </label>
+        </div>
+        <div class="listing-automation">
+          <label class="listing-smart-option">
+            <input id="listing-smart-prep" type="checkbox" checked />
+            <span><strong>Smart image preparation</strong><small>Separate the product, fit it inside the watermark safe area, and rebuild the original background.</small></span>
+          </label>
+          <details class="listing-template-manager" id="listing-template-manager">
+            <summary><span>Watermark Template Manager</span><small id="listing-template-manager-summary">Choose an account and material</small></summary>
+            <p>Safe margins are measured from each watermark automatically. Adjust a template here when its artwork needs more room.</p>
+            <div class="listing-template-manager-grid" id="listing-template-manager-grid"></div>
+          </details>
+        </div>
+        <div class="listing-review-header">
+          <div><span class="listing-kicker">Automatic matching</span><h3>Image plan</h3></div>
+          <span class="listing-plan-summary" id="listing-plan-summary">Upload images to begin.</span>
+        </div>
+        <div class="listing-plan" id="listing-plan"></div>
+        <footer class="listing-dialog-footer">
+          <p>Filename codes select the watermark. Smart preparation keeps the product proportional and clear of its saved safe margins.</p>
+          <div class="listing-dialog-actions">
+            <button class="listing-secondary-button" id="listing-apply" type="button" disabled>Apply Workflow</button>
+            <button class="listing-primary-button" id="listing-export" type="button" disabled>Generate &amp; Export</button>
+          </div>
+        </footer>
+      </div>
+    </section>
+    <script src="watermark-assets.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
