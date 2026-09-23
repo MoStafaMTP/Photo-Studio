@@ -203,12 +203,10 @@ html,body { width:100%; height:100%; overflow:hidden; }
 .listing-dialog-footer { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:16px 26px 22px; }
 .listing-dialog-footer > p { max-width:430px; margin:0; color:#8e8e93; font-size:10px; line-height:1.45; }
 .listing-dialog-actions { display:flex; gap:8px; }
-.listing-secondary-button,.listing-primary-button { min-height:40px; padding:0 15px; border:0; border-radius:11px; cursor:pointer; font:700 12px -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif; white-space:nowrap; }
-.listing-secondary-button { background:#e5e5ea; color:#1c1c1e; }
+.listing-primary-button { min-height:40px; padding:0 15px; border:0; border-radius:11px; cursor:pointer; font:700 12px -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif; white-space:nowrap; }
 .listing-primary-button { background:#007aff; color:#fff; box-shadow:0 5px 14px #007aff30; }
-.listing-secondary-button:hover { background:#d8d8dd; }
 .listing-primary-button:hover { background:#006ee6; }
-.listing-secondary-button:disabled,.listing-primary-button:disabled { opacity:.38; cursor:not-allowed; box-shadow:none; }
+.listing-primary-button:disabled { opacity:.38; cursor:not-allowed; box-shadow:none; }
 .listing-dialog.is-busy { cursor:progress; }
 .listing-dialog.is-busy select,.listing-dialog.is-busy button { pointer-events:none; }
 @media(max-width:700px) {
@@ -226,5 +224,5 @@ html,body { width:100%; height:100%; overflow:hidden; }
   .listing-plan-row { grid-template-columns:minmax(130px,1.4fr) 84px minmax(120px,1fr); }
   .listing-plan-row > :last-child { display:none; }
   .listing-dialog-footer { align-items:stretch; flex-direction:column; padding:14px 18px 18px; }
-  .listing-dialog-actions { display:grid; grid-template-columns:1fr 1fr; }
+  .listing-dialog-actions { display:grid; grid-template-columns:1fr; }
 }

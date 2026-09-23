@@ -1084,7 +1084,11 @@ layerSelectAllButton.addEventListener('click', () => {
   const item = files[activeIndex]; if (!item) return;
   selectedLayerIds = new Set(allLayerEntityIds(item)); renderLayerList(); syncSelectedLayerControls(); drawActive(); setStatus('All layers selected.');
 });
-layerClearButton.addEventListener('click', () => { selectedLayerIds.clear(); renderLayerList(); syncSelectedLayerControls(); drawActive(); setStatus('Layer selection cleared.'); });
+function clearLayerSelection() {
+  if (!selectedLayerIds.size) return;
+  selectedLayerIds.clear(); renderLayerList(); syncSelectedLayerControls(); drawActive(); setStatus('Layer selection cleared.');
+}
+layerClearButton.addEventListener('click', clearLayerSelection);
 layerGroup.querySelector('[data-layer-action="arrange"]').addEventListener('click', () => {
   if (selectedLayerIds.size < 2) { setStatus('Select at least two layers to arrange.'); return; }
   saveHistory(); arrangeSelectedLayers();
@@ -1106,6 +1110,12 @@ layerGroup.querySelector('[data-layer-action="remove"]').addEventListener('click
 });
 renderLayerList(); updateRemoveBackgroundControls();
 let imageDrag = null;
+document.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 || imageDrag || canvas.contains(event.target)) return;
+  // Keep the current selection while operating tools or selecting images/layers.
+  if (event.target.closest('button, input, select, textarea, label, a, [role="button"], [contenteditable="true"]')) return;
+  clearLayerSelection();
+});
 canvasWrap.addEventListener('pointerdown', (event) => {
   const item = files[activeIndex]; if (!item || canvas.hidden) return;
   const rect = canvas.getBoundingClientRect();
@@ -1144,7 +1154,7 @@ canvasWrap.addEventListener('pointercancel', () => { imageDrag = null; });
 let wheelHistoryActive = false;
 let wheelHistoryTimer;
 canvasWrap.addEventListener('wheel', (event) => {
-  if (activeIndex < 0 || canvas.hidden || event.ctrlKey || event.metaKey) return;
+  if (activeIndex < 0 || canvas.hidden || !selectedLayerIds.size || event.ctrlKey || event.metaKey) return;
   event.preventDefault();
   if (!wheelHistoryActive) { saveHistory(); wheelHistoryActive = true; }
   clearTimeout(wheelHistoryTimer);
@@ -1348,7 +1358,6 @@ const listingMaterial = document.querySelector('#listing-material');
 const listingPlan = document.querySelector('#listing-plan');
 const listingPlanSummary = document.querySelector('#listing-plan-summary');
 const listingApplyButton = document.querySelector('#listing-apply');
-const listingExportButton = document.querySelector('#listing-export');
 const listingSmartPrep = document.querySelector('#listing-smart-prep');
 const listingTemplateManager = document.querySelector('#listing-template-manager');
 const listingTemplateManagerSummary = document.querySelector('#listing-template-manager-summary');
@@ -1584,7 +1593,6 @@ function renderListingPreview() {
     else listingPlanSummary.textContent = `${files.length} image${files.length === 1 ? '' : 's'} ready · ${plan.section.name}`;
   }
   listingApplyButton.disabled = listingBusy || !plan.ready;
-  listingExportButton.disabled = listingBusy || !plan.ready;
   renderListingTemplateManager();
 }
 refreshListingPreview = renderListingPreview;
@@ -1607,7 +1615,6 @@ function setListingBusy(busy, action = 'Working…') {
   listingBusy = busy;
   listingDialog.classList.toggle('is-busy', busy);
   listingApplyButton.textContent = busy ? action : 'Apply Workflow';
-  listingExportButton.textContent = busy ? action : 'Generate & Export';
   renderListingPreview();
 }
 async function applyListingWatermarks() {
@@ -1631,7 +1638,6 @@ async function applyListingWatermarks() {
     row.item.watermarkTemplateId = row.template.id;
     if (useSmartPreparation) {
       listingApplyButton.textContent = `Preparing ${index + 1}/${plan.rows.length}`;
-      listingExportButton.textContent = `Preparing ${index + 1}/${plan.rows.length}`;
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
       row.item.smartPrep = createSmartPreparation(row.item.image, asset.safeArea, key);
       if (row.item.smartPrep.mode === 'fallback') fallbackCount += 1;
@@ -1651,11 +1657,6 @@ async function applyListingWatermarks() {
   setStatus(`Listing workflow applied to ${plan.rows.length} image${plan.rows.length === 1 ? '' : 's'} for ${plan.section.name}.${preparationMessage}`);
   return plan;
 }
-function listingArchiveName(plan) {
-  const slug = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  return `${slug(plan.section.name)}-${slug(plan.materialRule.label)}-ebay-listing.zip`;
-}
-
 listingOpenButton.setAttribute('aria-controls', 'listing-panel');
 listingOpenButton.setAttribute('aria-expanded', 'false');
 listingOpenButton.addEventListener('click', openListingPanel);
@@ -1672,17 +1673,6 @@ listingApplyButton.addEventListener('click', async () => {
     listingPanel.hidden = true; listingOpenButton.classList.remove('active'); listingOpenButton.setAttribute('aria-expanded', 'false');
   }
   catch (error) { setStatus(error.message || 'Listing watermarks could not be applied.'); }
-  finally { setListingBusy(false); }
-});
-listingExportButton.addEventListener('click', async () => {
-  setListingBusy(true, 'Generating…');
-  try {
-    const plan = await applyListingWatermarks();
-    const format = exportFormat.value;
-    await exportBatchArchive([...files], format, listingArchiveName(plan), 'Preparing listing image');
-    listingPanel.hidden = true; listingOpenButton.classList.remove('active'); listingOpenButton.setAttribute('aria-expanded', 'false');
-    setStatus(`eBay listing images exported for ${plan.section.name}.`);
-  } catch (error) { setStatus(error.message || 'Listing image generation failed.'); }
   finally { setListingBusy(false); }
 });
 renderListingPreview();

@@ -28,6 +28,7 @@ Detailed handoffs are available in:
 - Drag layers with optional Shift axis locking.
 - Move layers with arrow keys or Shift+Arrow for faster movement.
 - Add, duplicate, delete, select, group, resize, and reorder layers.
+- Click empty space outside the canvas to deselect layers; editing controls preserve the selection.
 - Use `Delete` to remove selected layers, `Ctrl + C`/`Ctrl + V` to copy and paste them, `Ctrl + Enter` to center them, and `Ctrl + B` to toggle their backgrounds off or on.
 - Per-layer shadows with opacity, angle, and distance controls.
 - Manual background removal for selected layers or the complete batch.
@@ -50,7 +51,7 @@ Detailed handoffs are available in:
 - Detect `DB`, `PB`, `DPB`, `DT`, `PT`, `DPT`, `DTB`, `PTB`, and `DPTB` filename codes.
 - Select Main, Passenger Side, or Normal templates automatically.
 - Review every image and resolved template before processing.
-- Export a complete account/material listing ZIP.
+- Use Apply Workflow to prepare the images, then review them in the editor and use Export Batch to download a ZIP.
 
 ### Smart preparation
 
@@ -68,7 +69,7 @@ Detailed handoffs are available in:
 - JPG, PNG, and WebP output.
 - Export the current image.
 - Export the complete batch as a browser-generated ZIP.
-- Export final eBay listing images through the Listing workflow.
+- Export prepared eBay listing images with the header's current-image or Export Batch controls.
 
 ## Run locally
 

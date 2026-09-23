@@ -18,7 +18,9 @@ The workflow now:
 6. Scales the product proportionally to fit inside the safe band.
 7. Centers the product horizontally and vertically inside that band.
 8. Draws the selected watermark at 100% configured opacity.
-9. Uses the existing JPG, PNG, WebP, individual, batch, and Listing ZIP export paths.
+9. Returns prepared images to the editor for review and export as JPG, PNG, or WebP using the header's individual or Export Batch controls.
+
+The Listing dialog uses a single blue (`#007aff`) **Apply Workflow** button. Apply the workflow first, review any manual adjustments in the editor, then export from the header.
 
 The **Smart image preparation** checkbox is enabled by default in Listing. Turning it off keeps the Phase 1.1 behavior and only assigns the filename-matched watermarks.
 
@@ -80,6 +82,8 @@ The Image Size control includes a synchronized 10–300% numeric field. The full
 
 Layer keyboard controls include `Delete` for selected-layer removal, `Ctrl + C` and `Ctrl + V` for the internal layer clipboard, `Ctrl + Enter` for horizontal and vertical group centering, and `Ctrl + B` for toggling selected-layer backgrounds off or on. Pasted layers retain their transforms, shadows, and background-removal state and receive independent image assets.
 
+Clicking empty space outside the canvas deselects all layers without changing the selected left-side images. Editing controls preserve layer selection, and scrolling over the canvas only resizes selected layers.
+
 Manual **Remove BG** or **Remove All BG** intentionally exits smart preparation for the affected base image and returns it to the manual background-removal workflow. Reset also clears smart preparation from the current image.
 
 ## Rendering and state
@@ -94,7 +98,7 @@ Each prepared batch item receives an in-memory `smartPrep` object containing:
 - segmentation coverage and separated/fallback mode;
 - analysis dimensions.
 
-The canvas renderer recognizes this state for preview, thumbnails, individual export, normal batch export, and Listing ZIP export. Prepared state is copied when a complete left-side batch image is duplicated during the session.
+The canvas renderer recognizes this state for preview, thumbnails, individual export, and batch export. Prepared state is copied when a complete left-side batch image is duplicated during the session.
 
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
