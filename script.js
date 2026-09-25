@@ -599,6 +599,88 @@ function smartSafeRect(preparation) {
   const verticalPadding = safeArea.clearance === 0 ? 0 : padding;
   return {x: padding, y: top + verticalPadding, width: Math.max(1, canvas.width - padding * 2), height: Math.max(1, bottom - top - verticalPadding * 2)};
 }
+const normalHeaderMaskCache = new WeakMap();
+const normalTopFitCache = new WeakMap();
+function normalHeaderMask(image) {
+  const key = `${canvas.width}:${canvas.height}`;
+  const cached = normalHeaderMaskCache.get(image);
+  if (cached?.key === key) return cached;
+  const scale = Math.min(1, 320 / Math.max(canvas.width, canvas.height));
+  const width = Math.max(1, Math.round(canvas.width * scale)), height = Math.max(1, Math.round(canvas.height * scale));
+  const work = document.createElement('canvas'); work.width = width; work.height = height;
+  const context = work.getContext('2d', {willReadFrequently: true});
+  const fit = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+  const drawWidth = image.naturalWidth * fit, drawHeight = image.naturalHeight * fit;
+  context.scale(width / canvas.width, height / canvas.height);
+  context.drawImage(image, (canvas.width - drawWidth) / 2, (canvas.height - drawHeight) / 2, drawWidth, drawHeight);
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const mask = new Uint8Array(width * height);
+  // Expand artwork by two analysis pixels to leave a visible gap around the logos.
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (pixels[(y * width + x) * 4 + 3] <= 16) continue;
+      for (let dy = Math.max(0, y - 2); dy <= Math.min(height - 1, y + 2); dy += 1) {
+        mask.fill(1, dy * width + Math.max(0, x - 2), dy * width + Math.min(width, x + 3));
+      }
+    }
+  }
+  const result = {key, width, height, mask}; normalHeaderMaskCache.set(image, result); return result;
+}
+function fitNormalTemplateTop(item, geometry) {
+  const preparation = item.smartPrep;
+  const template = findWatermarkTemplate(item.watermarkSection, item.watermarkTemplateId);
+  if (item.originalSize || preparation.mode !== 'separated' || preparation.safeArea.source === 'custom'
+      || normalizeListingTemplateName(template?.name) !== 'normal' || !item.watermarkImage?.naturalWidth) return geometry;
+  const key = [canvas.width, canvas.height, geometry.x, geometry.y, geometry.width, geometry.height, geometry.safeRect.y,
+    item.rotation || 0, Boolean(item.mirror), Boolean(item.flipY)].join(':');
+  const cached = normalTopFitCache.get(preparation);
+  if (cached?.key === key && cached.image === item.watermarkImage) return {...geometry, ...cached.adjustment};
+  let adjustment = {};
+  try {
+    const top = geometry.y - geometry.height / 2;
+    const edgeGap = Math.max(10, Math.min(canvas.width, canvas.height) * .012);
+    const travel = Math.max(0, Math.min(canvas.height * .08, top - edgeGap));
+    const growth = Math.max(0, Math.min(.08, geometry.safeRect.width / geometry.width - 1, travel / geometry.height));
+    const lift = travel - geometry.height * growth;
+    if (travel > 0) {
+      const header = normalHeaderMask(item.watermarkImage);
+      const work = document.createElement('canvas'); work.width = header.width; work.height = header.height;
+      const context = work.getContext('2d', {willReadFrequently: true});
+      const headerRows = Math.min(header.height, Math.ceil(Math.max(geometry.safeRect.y + edgeGap, canvas.height * .2) / canvas.height * header.height));
+      const candidate = (amount) => {
+        const factor = 1 + growth * amount;
+        return {y: geometry.y - (geometry.height * growth / 2 + lift) * amount,
+          width: geometry.width * factor, height: geometry.height * factor,
+          drawWidth: geometry.drawWidth * factor, drawHeight: geometry.drawHeight * factor};
+      };
+      const fits = (amount) => {
+        const next = candidate(amount), bounds = geometry.bounds;
+        context.clearRect(0, 0, work.width, work.height); context.save();
+        context.scale(work.width / canvas.width, work.height / canvas.height);
+        context.translate(geometry.x, next.y); context.rotate((item.rotation || 0) * Math.PI / 180);
+        context.scale(item.mirror ? -1 : 1, item.flipY ? -1 : 1);
+        context.drawImage(preparation.foreground, bounds.x, bounds.y, bounds.width, bounds.height, -next.drawWidth / 2, -next.drawHeight / 2, next.drawWidth, next.drawHeight);
+        context.restore();
+        const pixels = context.getImageData(0, 0, work.width, headerRows).data;
+        for (let index = 0; index < headerRows * work.width; index += 1) {
+          if (header.mask[index] && pixels[index * 4 + 3] > 16) return false;
+        }
+        return true;
+      };
+      if (fits(1)) adjustment = candidate(1);
+      else if (fits(0)) {
+        let low = 0, high = 1;
+        for (let step = 0; step < 9; step += 1) {
+          const middle = (low + high) / 2;
+          if (fits(middle)) low = middle; else high = middle;
+        }
+        adjustment = candidate(low);
+      }
+    }
+  } catch { /* Keep the ordinary safe-area fit if a template cannot be sampled. */ }
+  normalTopFitCache.set(preparation, {key, image: item.watermarkImage, adjustment});
+  return {...geometry, ...adjustment};
+}
 function smartProductGeometry(item) {
   const preparation = item?.smartPrep;
   if (!preparation?.foreground || !preparation?.bounds) return null;
@@ -606,17 +688,21 @@ function smartProductGeometry(item) {
   const rotation = item.rotation || 0, radians = rotation * Math.PI / 180;
   const rotatedWidth = Math.abs(bounds.width * Math.cos(radians)) + Math.abs(bounds.height * Math.sin(radians));
   const rotatedHeight = Math.abs(bounds.width * Math.sin(radians)) + Math.abs(bounds.height * Math.cos(radians));
-  const fit = Math.min(safeRect.width / Math.max(1, rotatedWidth), safeRect.height / Math.max(1, rotatedHeight)) * (item.scale ?? 100) / 100;
-  return {
-    x: safeRect.x + safeRect.width / 2 + (item.offsetX || 0),
-    y: safeRect.y + safeRect.height / 2 + (item.offsetY || 0),
+  const fit = Math.min(safeRect.width / Math.max(1, rotatedWidth), safeRect.height / Math.max(1, rotatedHeight));
+  const geometry = fitNormalTemplateTop(item, {
+    x: safeRect.x + safeRect.width / 2,
+    y: safeRect.y + safeRect.height / 2,
     drawWidth: bounds.width * fit,
     drawHeight: bounds.height * fit,
     width: rotatedWidth * fit,
     height: rotatedHeight * fit,
     bounds,
     safeRect
-  };
+  });
+  const scale = (item.scale ?? 100) / 100;
+  return {...geometry, x: geometry.x + (item.offsetX || 0), y: geometry.y + (item.offsetY || 0),
+    drawWidth: geometry.drawWidth * scale, drawHeight: geometry.drawHeight * scale,
+    width: geometry.width * scale, height: geometry.height * scale};
 }
 function drawSmartPreparedBase(item) {
   const preparation = item.smartPrep, backgroundSize = imageSourceSize(preparation.background);

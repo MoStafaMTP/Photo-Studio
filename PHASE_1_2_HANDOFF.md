@@ -93,6 +93,10 @@ The product's visible bounding box is scaled with `contain` logic. Rotation is i
 - no product cropping occurs;
 - the product is centered in the available safe rectangle.
 
+For templates named **Normal**, a separated product can grow proportionally by up to 8% and move upward into the clear space between the top logos. The renderer samples the product silhouette against the actual watermark alpha mask, leaving a small gap around the top artwork and preserving the canvas edges and bottom clearance. Width-limited products can move upward without additional enlargement. Close View images, unseparated fallback images, and explicit custom margins keep their ordinary behavior. Re-analysis and **Use default** allow automatic Normal positioning again.
+
+Normal positioning is calculated at the automatic 100% size, then the user's scale and drag offsets are applied. The geometry and watermark masks are cached so dragging, scrolling, thumbnails, and export use the same placement without repeating pixel analysis on every frame.
+
 After preparation, the normal editor controls remain available. The product can be dragged, moved with arrow keys, Shift-dragged on one axis, resized with the Image Size control or mouse wheel, rotated, flipped, centered, and given a per-layer shadow. The reconstructed background remains fixed while those product adjustments are made.
 
 Mouse-wheel resizing uses smooth 1% steps; holding Shift uses faster 5% steps. Watermark changes apply only to the images selected in the left panel, including a single selected image. `Ctrl + Alt + A` selects every image and immediately applies the active watermark template to the complete selection.
@@ -122,6 +126,8 @@ The canvas renderer recognizes this state for preview, thumbnails, individual ex
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+The Normal-template positioning update passed 29 focused browser checks, including all seven bundled Normal templates, proportion and edge preservation, native-resolution checks for new top-artwork overlap, explicit-margin handling, rotation, manual movement/scaling, full-width header protection, and production export. The existing 16-check Elite/Close View suite also passed, including the exact Close View export pixel comparison.
 
 The Elite/default-spacing update passed 16 browser checks: all 64 PDF margin mappings, all 57 bundled image loads, migration of old automatic margins, custom override persistence and reset, filename detection, mixed-batch processing, proportional safe margins, native Close View bounds and duplication, exact PNG pixel comparison, and the Apply Workflow button lifecycle. No browser JavaScript errors were reported.
 

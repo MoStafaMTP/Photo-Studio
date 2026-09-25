@@ -60,6 +60,7 @@ Detailed handoffs are available in:
 - Reconstruct the background behind the product's original position.
 - Analyze each watermark's alpha channel to find its largest clear horizontal band.
 - Fit the complete product proportionally inside that safe area without cropping.
+- Normal templates use the clear upper-center space: products can grow by up to 8% and move slightly upward, with the product silhouette checked against the top artwork. Close View images and explicit custom top margins are excluded.
 - Center the product horizontally and vertically in the available area.
 - Review and edit top and bottom margins in the Watermark Template Manager.
 - Bundled templates use the account/template margins from `Template Sizes.pdf`, saved in `watermark-safe-areas.js` at the native 1500 × 1500 template size and scaled to the output canvas. These margins have no additional vertical inset.
