@@ -10,7 +10,7 @@ Phase 1.2 extends the Listing module with automatic product preparation before t
 
 The workflow now:
 
-1. Detects the listing category from each filename.
+1. Uses resolved CPIS image metadata when supplied, with filename detection for standalone uploads.
 2. Resolves the selected account and material watermark.
 3. Uses the supplied template's spacing defaults, or measures a custom watermark's full-width transparent band.
 4. Separates the product from edge-connected background pixels.
@@ -22,9 +22,17 @@ The workflow now:
 
 The Listing dialog uses a single blue (`#007aff`) **Apply Workflow** button. Apply the workflow first, review any manual adjustments in the editor, then export from the header.
 
-The **Smart image preparation** checkbox is enabled by default in Listing. Turning it off keeps the Phase 1.1 behavior and only assigns the filename-matched watermarks.
+The **Smart image preparation** checkbox is enabled by default in Listing. Turning it off only assigns the matched watermarks, while Close View images still restore their original size and background.
 
-**Close View exception:** filenames containing `Close View`, `Close_View`, `Close-View`, or `CloseView` (case-insensitive) use the account's Normal template and bypass product separation, background rebuilding, and automatic fitting, even with smart preparation enabled. Applying the workflow restores the original background and centers the unrotated source at 100% native pixel size. The `originalSize` flag makes preview, layer bounds, duplication of batch images, and export use the same dimensions. The configured output canvas still controls the export dimensions; larger native images can extend past that canvas, and smaller images leave space around them.
+**Close View exception:** CPIS subtype `cv`, or standalone filenames such as `DTcv`, `DOPTcv`, `Close View`, `Close_View`, `Close-View`, or `CloseView` (case-insensitive), use the account's Normal template and bypass product separation, background rebuilding, and automatic fitting, even with smart preparation enabled. Applying the workflow restores the original background and centers the unrotated source at 100% native pixel size. The `originalSize` flag makes preview, layer bounds, duplication of batch images, and export use the same dimensions. The configured output canvas still controls the export dimensions; larger native images can extend past that canvas, and smaller images leave space around them.
+
+## CPIS metadata support
+
+See `CPIS_INTEGRATION.md` for the full contract. `listing-metadata.js` validates the primary codes DT/DB/PT/PB/DPT/DPB/DTB/PTB/DPTB, shared codes DOPT/DOPB, and subtypes main/unmain/cv/io/numbered. CPIS classifications override filenames. Only primary `main` rows use Main/Passenger Side templates; other subtypes and shared components use Normal, including `unmain` as confirmed by the user. An optional explicit `templateName` can override template choice without overriding Close View processing.
+
+Listing exposes **Import CPIS JSON** and **Use filenames**. `window.PhotoStudioIntegration` supports structured metadata with File objects, an existing-batch metadata setter, plan/metadata getters, clearing metadata, and the normal Apply Workflow operation. The imported account/material context is authoritative and its selectors are locked; color and optional source IDs are preserved. Unknown values, ambiguous filenames, incomplete manifests, and unclassified new uploads are surfaced rather than guessed. Metadata is copied by batch duplication and excluded from visual-edit undo snapshots.
+
+CPIS remains responsible for which variations use shared images and for composite/listing assembly. No CPIS server connection, business-rule engine, or asset-upload service was added.
 
 ## Watermark Template Manager
 
@@ -126,6 +134,8 @@ The canvas renderer recognizes this state for preview, thumbnails, individual ex
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+The CPIS integration passed 7 unit tests covering metadata validation and all 55 primary/shared-code and subtype combinations, 19 browser integration checks, and the existing 16-check Elite/Close View regression suite. Metadata precedence, atomic validation errors, duplicate identity, visual undo isolation, JSON import, bad image decoding, and the exact pixels of a metadata-driven Close View export were checked.
 
 The Normal-template positioning update passed 29 focused browser checks, including all seven bundled Normal templates, proportion and edge preservation, native-resolution checks for new top-artwork overlap, explicit-margin handling, rotation, manual movement/scaling, full-width header protection, and production export. The existing 16-check Elite/Close View suite also passed, including the exact Close View export pixel comparison.
 

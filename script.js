@@ -187,7 +187,13 @@ let layerClipboard = [];
 let layerClipboardPasteCount = 0;
 const undoStack = [];
 const redoStack = [];
-function cloneEditorItem(item) { return item ? {...item, layerOrder: [...(item.layerOrder || ['base', ...(item.layers || []).map((layer) => layer.id)])], layers: (item.layers || []).map((layer) => ({...layer}))} : null; }
+function cloneEditorItem(item) {
+  if (!item) return null;
+  const copy = {...item, layerOrder: [...(item.layerOrder || ['base', ...(item.layers || []).map((layer) => layer.id)])], layers: (item.layers || []).map((layer) => ({...layer}))};
+  // Editing undo/redo must not replace classification supplied by CPIS.
+  delete copy.listingMetadata;
+  return copy;
+}
 function snapshot() { return { item: activeIndex >= 0 ? cloneEditorItem(files[activeIndex]) : null, fit: fitSelect.value, imageScale: imageScale.value, width: resizeWidth.value, height: resizeHeight.value, shadowAngle: shadowAngle.value, shadowDistance: shadowDistance.value, shadowStrength: shadowStrength.value, backgroundMode, backgroundColor: backgroundColor.value, movementLock: movementLock.value }; }
 function updateHistoryButtons() { undoButton.disabled = !undoStack.length; redoButton.disabled = !redoStack.length; }
 function saveHistory() { if (activeIndex < 0) return; undoStack.push(snapshot()); if (undoStack.length > 50) undoStack.shift(); redoStack.length = 0; updateHistoryButtons(); }
@@ -234,12 +240,15 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('keyup', (event) => { if (event.key.startsWith('Arrow')) keyboardMoveActive = false; });
 const setStatus = (message) => { status.textContent = message; };
 
-function addImages(fileList) {
+function addImages(fileList, {metadataByFile = null} = {}) {
   const accepted = [...fileList].filter((file) => file.type.startsWith('image/'));
+  const added = [];
   accepted.forEach((file) => {
     const item = { id: createBatchImageId(), file, displayName: file.name, url: URL.createObjectURL(file), image: new Image(), rotation: 0, mirror: false, flipY: false, offsetX: 0, offsetY: 0, scale: 100, fit: fitSelect.value, removeBg: false, processed: null, smartPrep: null, shadow: false, shadowAngle: 90, shadowDistance: 18, shadowStrength: 80, layers: [], layerOrder: ['base'], baseRemoved: false, watermarkImage: null, watermarkEnabled: false, watermarkOpacity: 100, watermarkSection: null, watermarkTemplateId: null };
-    item.image.onload = () => { if (activeIndex === -1) selectImage(0); else if (files[activeIndex] === item) drawActive(); };
-    item.image.src = item.url; files.push(item);
+    if (metadataByFile?.has(file)) item.listingMetadata = metadataByFile.get(file);
+    item.image.onload = () => { if (activeIndex === -1) selectImage(0); else if (files[activeIndex] === item) drawActive(); refreshListingPreview(); };
+    item.image.onerror = () => { setStatus(`${file.name} could not be loaded.`); refreshListingPreview(); };
+    item.image.src = item.url; files.push(item); added.push(item);
   });
   if (accepted.length) {
     if (activeIndex === -1) activeIndex = 0;
@@ -249,6 +258,7 @@ function addImages(fileList) {
       window.setTimeout(() => openListingPanel(), 0);
     }
   }
+  return added;
 }
 input.addEventListener('change', (event) => addImages(event.target.files));
 canvasWrap.addEventListener('dragover', (event) => { event.preventDefault(); canvasWrap.classList.add('dragging'); });
@@ -401,6 +411,7 @@ function removeBatchImage(index) {
   new Set([item.url, ...(item.layers || []).map((layer) => layer.url)]).forEach((url) => URL.revokeObjectURL(url));
   undoStack.length = 0; redoStack.length = 0; updateHistoryButtons();
   if (!files.length) {
+    cpisListingContext = null;
     activeIndex = -1; selectedLayerIds.clear(); selectedBatchImageIds.clear(); listingAutoPrompted = false; renderThumbs(); renderLayerList();
     empty.hidden = false; canvas.hidden = true; watermark.hidden = true; ctx.clearRect(0, 0, canvas.width, canvas.height);
     setStatus(`${item.displayName || item.file.name} removed. No images remain.`); return;
@@ -1436,10 +1447,7 @@ const LISTING_MATERIAL_RULES = {
     templates: {main: 'Normal', passenger: 'PS', normal: 'Normal'}
   }
 };
-const LISTING_CODE_TYPES = {
-  DB: 'main', PB: 'passenger', DPB: 'main', DT: 'main', PT: 'passenger',
-  DPT: 'main', DTB: 'main', PTB: 'passenger', DPTB: 'main'
-};
+const LISTING_CODE_TYPES = Object.fromEntries(Object.entries(PhotoStudioMetadata.primary).map(([code, info]) => [code, info.templateType]));
 const LISTING_TYPE_LABELS = {main: 'Main', passenger: 'Main Passenger Side', normal: 'Other / Normal'};
 const listingOpenButton = document.querySelector('#open-listing');
 const listingPanel = document.querySelector('#listing-panel');
@@ -1455,6 +1463,7 @@ const listingTemplateManager = document.querySelector('#listing-template-manager
 const listingTemplateManagerSummary = document.querySelector('#listing-template-manager-summary');
 const listingTemplateManagerGrid = document.querySelector('#listing-template-manager-grid');
 let listingBusy = false;
+let cpisListingContext = null;
 let listingTemplateManagerRenderId = 0;
 const listingWatermarkImageCache = new Map();
 const watermarkSafeAreaCache = new Map();
@@ -1468,19 +1477,12 @@ WATERMARK_SECTION_DISPLAY_ORDER.forEach((sectionIndex) => {
 
 function listingSourceName(item) { return item?.displayName || item?.file?.name || 'Untitled image'; }
 function detectListingImageType(fileName) {
-  const stem = String(fileName || '').replace(/\.[^/.]+$/, '').toUpperCase();
-  if (/(?:^|[^A-Z])CLOSE[\s_-]*VIEW(?=$|[^A-Z])/.test(stem)) {
-    return {code: 'CLOSE VIEW', type: 'normal', label: 'Close View · original size', closeView: true};
-  }
-  const match = stem.match(/(?:^|[^A-Z])(DPTB|DPB|DPT|DTB|PTB|DB|PB|DT|PT)(?=$|[^A-Z])/);
-  const code = match?.[1] || 'NORMAL';
-  const type = LISTING_CODE_TYPES[code] || 'normal';
-  return {code, type, label: LISTING_TYPE_LABELS[type]};
+  return PhotoStudioMetadata.detectFilename(fileName);
 }
 function normalizeListingTemplateName(name) {
   return String(name || '').replace(/\.[^/.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
-function findListingTemplate(sectionIndex, requestedName) {
+function findListingTemplate(sectionIndex, requestedName, {allowAccountDefault = true} = {}) {
   const section = watermarkSections[sectionIndex];
   if (!section) return {template: null, fallback: false};
   const aliases = requestedName === 'GLS PI' ? ['GLS PI', 'PLS PI'] : [requestedName];
@@ -1488,7 +1490,7 @@ function findListingTemplate(sectionIndex, requestedName) {
   const matches = section.templates.filter((template) => normalizedAliases.has(normalizeListingTemplateName(template.name)));
   const exact = matches.find((template) => !template.builtIn) || matches[0];
   if (exact) return {template: exact, fallback: exact.name !== requestedName};
-  if (section.templates.length === 1) return {template: section.templates[0], fallback: true};
+  if (allowAccountDefault && section.templates.length === 1) return {template: section.templates[0], fallback: true};
   return {template: null, fallback: false};
 }
 function listingTemplateKey(sectionIndex, template) { return `${sectionIndex}:${template.id}`; }
@@ -1654,26 +1656,39 @@ async function renderListingTemplateManager() {
   }));
 }
 function createListingPlan() {
-  const hasAccount = listingAccount.value !== '';
-  const sectionIndex = hasAccount ? Number(listingAccount.value) : -1;
-  const materialRule = LISTING_MATERIAL_RULES[listingMaterial.value] || null;
+  const hasAccount = Boolean(cpisListingContext) || listingAccount.value !== '';
+  const sectionIndex = cpisListingContext?.sectionIndex ?? (hasAccount ? Number(listingAccount.value) : -1);
+  const materialRule = LISTING_MATERIAL_RULES[cpisListingContext?.materialKey || listingMaterial.value] || null;
   const rows = files.map((item) => {
-    const detection = detectListingImageType(listingSourceName(item));
-    const requestedTemplate = materialRule?.templates[detection.type] || null;
-    const match = hasAccount && requestedTemplate ? findListingTemplate(sectionIndex, requestedTemplate) : {template: null, fallback: false};
-    return {item, detection, requestedTemplate, template: match.template, fallback: match.fallback};
+    let detection, metadataError = null;
+    try {
+      if (Object.prototype.hasOwnProperty.call(item, 'listingMetadata')) detection = PhotoStudioMetadata.resolveImage(item.listingMetadata);
+      else if (cpisListingContext) throw new Error(`CPIS metadata is missing for ${listingSourceName(item)}. Import updated metadata or choose Use filenames.`);
+      else detection = detectListingImageType(listingSourceName(item));
+    } catch (error) {
+      metadataError = error.message; detection = {code: 'METADATA', type: 'normal', label: metadataError, source: 'metadata'};
+    }
+    const explicitTemplate = item.listingMetadata?.templateName;
+    const requestedTemplate = metadataError ? null : explicitTemplate || materialRule?.templates[detection.type] || null;
+    const match = hasAccount && requestedTemplate ? findListingTemplate(sectionIndex, requestedTemplate, {allowAccountDefault: !explicitTemplate}) : {template: null, fallback: false};
+    const imageReady = Boolean(item.image.complete && item.image.naturalWidth);
+    return {item, detection, metadataError, imageReady, requestedTemplate, template: match.template, fallback: match.fallback};
   });
-  const missingCount = rows.filter((row) => hasAccount && materialRule && !row.template).length;
+  const missingCount = rows.filter((row) => hasAccount && materialRule && !row.metadataError && !row.template).length;
+  const metadataErrorCount = rows.filter(row => row.metadataError).length;
   return {
     sectionIndex,
     section: hasAccount ? watermarkSections[sectionIndex] : null,
     materialRule,
     rows,
     missingCount,
-    ready: Boolean(files.length && hasAccount && materialRule && !missingCount)
+    metadataErrorCount,
+    ready: Boolean(files.length && hasAccount && materialRule && !missingCount && !metadataErrorCount && rows.every(row => row.imageReady))
   };
 }
 function listingStatusForRow(plan, row) {
+  if (row.metadataError) return {text: 'Metadata required', className: 'missing'};
+  if (!row.imageReady) return {text: row.item.image.complete ? 'Image failed' : 'Loading image', className: 'missing'};
   if (!plan.section || !plan.materialRule) return {text: 'Waiting', className: ''};
   if (!row.template) return {text: 'Missing', className: 'missing'};
   if (row.detection.closeView) return {text: 'Original size', className: ''};
@@ -1686,6 +1701,7 @@ function listingStatusForRow(plan, row) {
 }
 function renderListingPreview() {
   if (!listingPlan) return;
+  syncCPISMetadataControls();
   const plan = createListingPlan();
   listingPlan.innerHTML = '';
   if (!files.length) {
@@ -1700,18 +1716,20 @@ function renderListingPreview() {
     plan.rows.forEach((row) => {
       const element = document.createElement('div'); element.className = 'listing-plan-row';
       const fileCell = document.createElement('div'); fileCell.className = 'listing-plan-file'; fileCell.textContent = listingSourceName(row.item);
-      const category = document.createElement('small'); category.textContent = row.detection.label; fileCell.append(category);
+      const category = document.createElement('small'); category.textContent = `${row.detection.source === 'metadata' ? 'CPIS · ' : ''}${row.detection.label}`; fileCell.append(category);
       const codeCell = document.createElement('div'); codeCell.className = 'listing-plan-type';
       const code = document.createElement('span'); code.className = `listing-plan-code ${row.detection.type === 'normal' ? 'normal' : ''}`; code.textContent = row.detection.code; codeCell.append(code);
       const templateCell = document.createElement('div'); templateCell.className = 'listing-plan-template';
       templateCell.textContent = row.template?.name || row.requestedTemplate || 'Choose settings';
       if (row.fallback && row.template && row.requestedTemplate !== row.template.name) templateCell.title = `Requested ${row.requestedTemplate}; using ${row.template.name}`;
       const statusData = listingStatusForRow(plan, row);
-      const statusCell = document.createElement('span'); statusCell.className = `listing-plan-status ${statusData.className}`.trim(); statusCell.textContent = statusData.text;
+      const statusCell = document.createElement('span'); statusCell.className = `listing-plan-status ${statusData.className}`.trim(); statusCell.textContent = statusData.text; if (row.metadataError) statusCell.title = row.metadataError;
       element.append(fileCell, codeCell, templateCell, statusCell); listingPlan.append(element);
     });
     if (!plan.section) listingPlanSummary.textContent = `${files.length} image${files.length === 1 ? '' : 's'} · choose an account`;
     else if (!plan.materialRule) listingPlanSummary.textContent = `${files.length} image${files.length === 1 ? '' : 's'} · choose a material`;
+    else if (plan.metadataErrorCount) listingPlanSummary.textContent = `${plan.metadataErrorCount} image${plan.metadataErrorCount === 1 ? '' : 's'} need valid CPIS metadata`;
+    else if (plan.rows.some(row => !row.imageReady)) listingPlanSummary.textContent = 'Waiting for images to load';
     else if (plan.missingCount) listingPlanSummary.textContent = `${plan.missingCount} missing template${plan.missingCount === 1 ? '' : 's'} in ${plan.section.name}`;
     else listingPlanSummary.textContent = `${files.length} image${files.length === 1 ? '' : 's'} ready · ${plan.section.name}`;
   }
@@ -1719,6 +1737,103 @@ function renderListingPreview() {
   renderListingTemplateManager();
 }
 refreshListingPreview = renderListingPreview;
+
+function syncCPISMetadataControls() {
+  listingAccount.disabled = listingBusy || Boolean(cpisListingContext);
+  listingMaterial.disabled = listingBusy || Boolean(cpisListingContext);
+  document.querySelector('#listing-import-metadata').disabled = listingBusy || !files.length;
+  document.querySelector('#listing-clear-metadata').hidden = !cpisListingContext;
+  const label = document.querySelector('#listing-metadata-status');
+  label.textContent = cpisListingContext
+    ? `CPIS · ${cpisListingContext.account} · ${cpisListingContext.material}${cpisListingContext.color ? ` · ${cpisListingContext.color}` : ''}`
+    : 'Local uploads use filename detection.';
+}
+function prepareCPISMetadata(payload, items) {
+  if (listingBusy) throw new Error('Wait for the current Listing workflow to finish.');
+  const normalized = PhotoStudioMetadata.normalizePayload(payload);
+  const account = normalized.account.toLowerCase();
+  const sectionIndex = watermarkSections.findIndex((section, index) =>
+    section.name.toLowerCase() === account || WATERMARK_SECTION_NAMES[index].toLowerCase() === account
+    || (account === 'dsa' && WATERMARK_SECTION_NAMES[index] === 'DSA eBay'));
+  if (sectionIndex < 0) throw new Error(`CPIS: unknown account "${normalized.account}".`);
+  if (!items.length) throw new Error('Upload the product images before importing CPIS metadata.');
+  const seen = new Set();
+  const bindings = normalized.images.map(metadata => {
+    const matches = items.filter(item => metadata.imageId ? item.id === metadata.imageId : item.file.name === metadata.filename);
+    if (matches.length !== 1) throw new Error(matches.length ? `CPIS: ${metadata.filename} is ambiguous. Supply its Photo Studio imageId.` : `CPIS: no uploaded image matches ${metadata.filename}.`);
+    const item = matches[0];
+    if (item.file.name !== metadata.filename) throw new Error(`CPIS: imageId and filename disagree for ${metadata.filename}.`);
+    if (seen.has(item)) throw new Error(`CPIS: metadata targets ${metadata.filename} more than once.`);
+    if (metadata.templateName && !findListingTemplate(sectionIndex, metadata.templateName, {allowAccountDefault: false}).template) {
+      throw new Error(`CPIS: template "${metadata.templateName}" is not available for ${normalized.account}.`);
+    }
+    seen.add(item); return {item, metadata};
+  });
+  if (seen.size !== items.length) throw new Error('CPIS: include metadata for every uploaded image in this batch.');
+  const context = Object.freeze({schemaVersion: 1, account: WATERMARK_SECTION_NAMES[sectionIndex], sectionIndex,
+    material: normalized.material, materialKey: normalized.materialKey, color: normalized.color});
+  return {context, bindings};
+}
+function commitCPISContext(context) {
+  cpisListingContext = context;
+  listingAccount.value = String(context.sectionIndex); listingMaterial.value = context.materialKey;
+}
+function setCPISMetadata(payload) {
+  const {context, bindings} = prepareCPISMetadata(payload, files);
+  commitCPISContext(context);
+  bindings.forEach(({item, metadata}) => { item.listingMetadata = metadata; });
+  openListingPanel(); setStatus(`CPIS metadata loaded for ${bindings.length} images.`);
+  return getCPISMetadata();
+}
+async function importCPISImages(payload, imageFiles) {
+  if (files.length) throw new Error('CPIS: importImages needs an empty editor. Use setMetadata for images already uploaded.');
+  const incoming = Array.from(imageFiles || []);
+  if (!incoming.length || incoming.some(file => !file?.type?.startsWith('image/') || typeof file.arrayBuffer !== 'function')) {
+    throw new Error('CPIS: supply the image File objects separately from the metadata.');
+  }
+  const candidates = incoming.map((file, index) => ({file, id: `incoming-${index}`}));
+  const {context, bindings} = prepareCPISMetadata(payload, candidates);
+  commitCPISContext(context);
+  const metadataByFile = new Map(bindings.map(({item, metadata}) => [item.file, metadata]));
+  const added = addImages(incoming, {metadataByFile});
+  openListingPanel();
+  try { await Promise.all(added.map(item => item.image.decode())); }
+  catch { throw new Error('CPIS: one or more image files could not be decoded. Replace or remove the failed files before processing.'); }
+  finally { renderListingPreview(); }
+  return getCPISMetadata();
+}
+function clearCPISMetadata() {
+  if (listingBusy) throw new Error('Wait for the current Listing workflow to finish.');
+  cpisListingContext = null;
+  files.forEach(item => { delete item.listingMetadata; });
+  renderListingPreview(); setStatus('Filename detection enabled for this batch.');
+}
+function getCPISMetadata() {
+  if (!cpisListingContext) return null;
+  const {schemaVersion, account, material, color} = cpisListingContext;
+  return {schemaVersion, account, material, color, images: files.map(item => ({...item.listingMetadata, filename: item.file.name, imageId: item.id}))};
+}
+function getCPISPlan() {
+  const plan = createListingPlan();
+  return {ready: plan.ready, account: plan.section?.name || null, material: cpisListingContext?.material || plan.materialRule?.label || null,
+    color: cpisListingContext?.color || null,
+    images: plan.rows.map(row => ({imageId: row.item.id, id: row.item.listingMetadata?.id || null, filename: row.item.file.name,
+      variation: row.detection.variation || null, subtype: row.detection.subtype || null, kind: row.detection.kind || null,
+      source: row.detection.source, templateName: row.template?.name || null, closeView: Boolean(row.detection.closeView),
+      error: row.metadataError || (!row.imageReady ? 'Image is not ready.' : !row.template ? 'Template is not available.' : null)}))};
+}
+globalThis.PhotoStudioIntegration = Object.freeze({
+  schemaVersion: 1, setMetadata: setCPISMetadata, importImages: importCPISImages,
+  getMetadata: getCPISMetadata, getPlan: getCPISPlan, clearMetadata: clearCPISMetadata, applyWorkflow: runListingWorkflow
+});
+document.querySelector('#listing-import-metadata').addEventListener('click', () => document.querySelector('#listing-metadata-input').click());
+document.querySelector('#listing-clear-metadata').addEventListener('click', clearCPISMetadata);
+document.querySelector('#listing-metadata-input').addEventListener('change', async (event) => {
+  const file = event.target.files[0]; if (!file) return;
+  try { setCPISMetadata(JSON.parse(await file.text())); }
+  catch (error) { setStatus(error.message); document.querySelector('#listing-metadata-status').textContent = error.message; }
+  finally { event.target.value = ''; }
+});
 
 function openListingPanel() {
   listingPanel.hidden = false;
@@ -1742,7 +1857,7 @@ function setListingBusy(busy, action = 'Working…') {
 }
 async function applyListingWatermarks() {
   const plan = createListingPlan();
-  if (!plan.ready) throw new Error(plan.missingCount ? 'Required watermark templates are missing.' : 'Choose an account and material first.');
+  if (!plan.ready) throw new Error(plan.rows.find(row => row.metadataError)?.metadataError || (plan.missingCount ? 'Required watermark templates are missing.' : plan.rows.some(row => !row.imageReady) ? 'Wait for all images to load successfully.' : 'Choose an account and material first.'));
   const useSmartPreparation = Boolean(listingSmartPrep.checked);
   const templateAssets = new Map();
   await Promise.all(uniqueListingTemplates(plan).map(async ({template}) => {
@@ -1797,15 +1912,18 @@ window.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !l
 listingAccount.addEventListener('change', renderListingPreview);
 listingMaterial.addEventListener('change', renderListingPreview);
 listingSmartPrep.addEventListener('change', renderListingPreview);
-listingApplyButton.addEventListener('click', async () => {
+async function runListingWorkflow() {
+  if (listingBusy) throw new Error('The Listing workflow is already running.');
   setListingBusy(true, 'Applying…');
   try {
     await applyListingWatermarks();
     listingPanel.hidden = true; listingOpenButton.classList.remove('active'); listingOpenButton.setAttribute('aria-expanded', 'false');
+    return getCPISPlan();
   }
-  catch (error) { setStatus(error.message || 'Listing watermarks could not be applied.'); }
+  catch (error) { setStatus(error.message || 'Listing watermarks could not be applied.'); throw error; }
   finally { setListingBusy(false); }
-});
+}
+listingApplyButton.addEventListener('click', () => { runListingWorkflow().catch(() => {}); });
 renderListingPreview();
 
 const watermarkLibrary = document.createElement('section');

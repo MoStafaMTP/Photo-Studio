@@ -48,11 +48,21 @@ Detailed handoffs are available in:
 ### Listing workflow
 
 - Select an eBay account and product material.
+- Import resolved CPIS metadata through **Import CPIS JSON** or `window.PhotoStudioIntegration`; metadata takes priority over filenames.
 - Detect `DB`, `PB`, `DPB`, `DT`, `PT`, `DPT`, `DTB`, `PTB`, and `DPTB` filename codes.
+- Support DOPT/DOPB as shared image types and `main`, `unmain`, `cv`, `io`, and `numbered` subtypes. Only primary `main` images use Main/Passenger templates; all other roles use Normal unless CPIS supplies an explicit template choice.
 - Select Main, Passenger Side, or Normal templates automatically.
 - Review every image and resolved template before processing.
 - Close View filenames (`Close View`, `Close_View`, `Close-View`, or `CloseView`, case-insensitive) use the account's Normal template and keep the source image at its original pixel size with its background intact. This also takes priority when the filename contains a part code such as `DT`.
 - Use Apply Workflow to prepare the images, then review them in the editor and use Export Batch to download a ZIP.
+
+### CPIS integration
+
+The [CPIS integration guide](CPIS_INTEGRATION.md) defines the payload, validation, template mapping, and browser API. CPIS owns variation detection, shared-component assignment, color, and composite/listing membership. Photo Studio reuses its existing account templates and processing engine.
+
+The API supports importing image Files with metadata, annotating an existing batch, reviewing template choices, applying the workflow, and reading metadata back with stable editor image IDs. `Genuine Leather Perf` maps to Genuine Leather Perforated. Color is retained as context. Invalid/missing metadata blocks processing; it does not trigger filename guessing. Standalone uploads retain filename fallback.
+
+This is a browser API and JSON import, with no automatic CPIS network connection. The CPIS host must supply the metadata and files. Existing image and ZIP exports remain available after manual corrections.
 
 ### Smart preparation
 
@@ -98,6 +108,9 @@ Then open <http://localhost:8000/>.
 | `viewport.css` | Final responsive layout and Listing UI styling. |
 | `watermark-assets.js` | Portable embedded copies of all bundled watermark PNGs. |
 | `watermark-safe-areas.js` | Shared account/template spacing defaults transcribed from the supplied PDF. |
+| `listing-metadata.js` | CPIS metadata validation, image-role translation, and local filename fallback. |
+| `CPIS_INTEGRATION.md` | Integration contract and browser API for the CPIS developer. |
+| `tests/listing-metadata.test.cjs` | Dependency-free metadata contract regression tests. |
 | `scripts/build-watermark-assets.cjs` | Regenerate embedded images after changing account-folder PNGs. |
 | Account folders | Original account-specific watermark PNG files. |
 | `PHASE_*_HANDOFF.md` | Feature and implementation documentation for each milestone. |
@@ -119,6 +132,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. Set the output dimensions to the source dimensions when an edge-to-edge, uncropped Close View is needed. Manual resizing remains available after applying the workflow.
 
 ## Validation
+
+The CPIS update passed 7 unit tests (including all 55 variation/shared-component and subtype combinations), 19 integration browser checks, and the existing 16-check Elite/Close View browser suite. Run `node --test tests/listing-metadata.test.cjs` for the repeatable metadata checks.
 
 The Phase 1.2 browser regression suite passed 24 checks covering filename mapping, template resolution, safe-area measurement and persistence, foreground detection, background reconstruction, proportional fitting, centering, and 1576 × 1576 JPG export.
 
