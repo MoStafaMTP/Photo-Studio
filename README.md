@@ -37,7 +37,7 @@ Detailed handoffs are available in:
 ### Watermarks
 
 - Eight account-specific Saved Watermarks sections.
-- 49 bundled PNG templates available to every clone of the repository.
+- 57 bundled PNG templates, including eight Elite templates, available to every clone of the repository.
 - Upload, rename, select, disable, and delete personal watermark templates.
 - Apply watermark changes only to the selected left-side image or Ctrl/Command-selected images.
 - Press `Ctrl + Alt + A` to select the complete batch and apply the active watermark template to every selected image.
@@ -51,6 +51,7 @@ Detailed handoffs are available in:
 - Detect `DB`, `PB`, `DPB`, `DT`, `PT`, `DPT`, `DTB`, `PTB`, and `DPTB` filename codes.
 - Select Main, Passenger Side, or Normal templates automatically.
 - Review every image and resolved template before processing.
+- Close View filenames (`Close View`, `Close_View`, `Close-View`, or `CloseView`, case-insensitive) use the account's Normal template and keep the source image at its original pixel size with its background intact. This also takes priority when the filename contains a part code such as `DT`.
 - Use Apply Workflow to prepare the images, then review them in the editor and use Export Batch to download a ZIP.
 
 ### Smart preparation
@@ -61,6 +62,8 @@ Detailed handoffs are available in:
 - Fit the complete product proportionally inside that safe area without cropping.
 - Center the product horizontally and vertically in the available area.
 - Review and edit top and bottom margins in the Watermark Template Manager.
+- Bundled templates use the account/template margins from `Template Sizes.pdf`, saved in `watermark-safe-areas.js` at the native 1500 × 1500 template size and scaled to the output canvas. These margins have no additional vertical inset.
+- Older automatic measurements are replaced by the shared defaults; explicit custom margins are preserved. **Use default** restores the supplied margins, and **Analyze** saves a new measurement.
 - Save margin overrides in IndexedDB.
 - Preserve a full-image fallback when reliable separation is not possible.
 
@@ -93,6 +96,8 @@ Then open <http://localhost:8000/>.
 | `styles.css` | Base editor styling. |
 | `viewport.css` | Final responsive layout and Listing UI styling. |
 | `watermark-assets.js` | Portable embedded copies of all bundled watermark PNGs. |
+| `watermark-safe-areas.js` | Shared account/template spacing defaults transcribed from the supplied PDF. |
+| `scripts/build-watermark-assets.cjs` | Regenerate embedded images after changing account-folder PNGs. |
 | Account folders | Original account-specific watermark PNG files. |
 | `PHASE_*_HANDOFF.md` | Feature and implementation documentation for each milestone. |
 
@@ -102,12 +107,15 @@ Personal watermark uploads and safe-area overrides are stored in the browser's I
 
 Bundled watermark templates are stored in the repository and work on every system.
 
+After adding or replacing bundled PNGs, update the library entries in `script.js` and run `node scripts/build-watermark-assets.cjs`.
+
 ## Technical notes
 
 - Canvas rendering uses the real export dimensions while CSS fits the preview to the browser viewport.
 - ZIP files are generated locally without a third-party archive library.
 - Smart product separation is optimized for clean or gently graded marketplace backgrounds. Difficult scenes use a non-destructive full-image fallback marked **Review fit**.
 - No uploaded product images leave the browser.
+- Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. Set the output dimensions to the source dimensions when an edge-to-edge, uncropped Close View is needed. Manual resizing remains available after applying the workflow.
 
 ## Validation
 

@@ -179,7 +179,7 @@ html,body { width:100%; height:100%; overflow:hidden; }
 .listing-safe-fields label { display:grid; gap:4px; color:#8e8e93; font-size:9px; font-weight:650; }
 .listing-safe-fields input { width:100%; min-width:0; height:31px; padding:0 7px; border:1px solid #d1d1d6; border-radius:8px; outline:0; background:#fff; color:#1c1c1e; font:650 11px ui-monospace,SFMono-Regular,Menlo,monospace; box-sizing:border-box; }
 .listing-safe-fields input:focus { border-color:#007aff; box-shadow:0 0 0 2px #007aff20; }
-.listing-safe-foot { display:flex; align-items:center; justify-content:space-between; gap:7px; margin-top:8px; }
+.listing-safe-foot { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:7px; margin-top:8px; }
 .listing-safe-middle { min-width:0; overflow:hidden; color:#636366; font-size:9px; font-weight:650; text-overflow:ellipsis; white-space:nowrap; }
 .listing-safe-analyze { flex:none; min-height:27px; padding:0 8px; border:0; border-radius:8px; background:#e5f1ff; color:#007aff; cursor:pointer; font-size:9px; font-weight:750; }
 .listing-safe-analyze:hover { background:#d8eaff; }

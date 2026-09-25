@@ -64,11 +64,11 @@
         <div class="listing-automation">
           <label class="listing-smart-option">
             <input id="listing-smart-prep" type="checkbox" checked />
-            <span><strong>Smart image preparation</strong><small>Separate the product, fit it inside the watermark safe area, and rebuild the original background.</small></span>
+            <span><strong>Smart image preparation</strong><small>Fit products inside template margins and rebuild the background. Close View images keep their original size and background.</small></span>
           </label>
           <details class="listing-template-manager" id="listing-template-manager">
             <summary><span>Watermark Template Manager</span><small id="listing-template-manager-summary">Choose an account and material</small></summary>
-            <p>Safe margins are measured from each watermark automatically. Adjust a template here when its artwork needs more room.</p>
+            <p>Bundled templates use saved spacing defaults. Other templates are measured automatically. Adjust the margins here when needed.</p>
             <div class="listing-template-manager-grid" id="listing-template-manager-grid"></div>
           </details>
         </div>
@@ -86,6 +86,7 @@
       </div>
     </section>
     <script src="watermark-assets.js"></script>
+    <script src="watermark-safe-areas.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

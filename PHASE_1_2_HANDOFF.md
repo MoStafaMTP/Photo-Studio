@@ -12,7 +12,7 @@ The workflow now:
 
 1. Detects the listing category from each filename.
 2. Resolves the selected account and material watermark.
-3. Measures that watermark's available full-width transparent band.
+3. Uses the supplied template's spacing defaults, or measures a custom watermark's full-width transparent band.
 4. Separates the product from edge-connected background pixels.
 5. Reconstructs the vacated background from the source image's corner and edge colors.
 6. Scales the product proportionally to fit inside the safe band.
@@ -23,6 +23,8 @@ The workflow now:
 The Listing dialog uses a single blue (`#007aff`) **Apply Workflow** button. Apply the workflow first, review any manual adjustments in the editor, then export from the header.
 
 The **Smart image preparation** checkbox is enabled by default in Listing. Turning it off keeps the Phase 1.1 behavior and only assigns the filename-matched watermarks.
+
+**Close View exception:** filenames containing `Close View`, `Close_View`, `Close-View`, or `CloseView` (case-insensitive) use the account's Normal template and bypass product separation, background rebuilding, and automatic fitting, even with smart preparation enabled. Applying the workflow restores the original background and centers the unrotated source at 100% native pixel size. The `originalSize` flag makes preview, layer bounds, duplication of batch images, and export use the same dimensions. The configured output canvas still controls the export dimensions; larger native images can extend past that canvas, and smaller images leave space around them.
 
 ## Watermark Template Manager
 
@@ -35,13 +37,30 @@ Each template records:
 - top safe margin;
 - bottom safe margin;
 - computed middle safe height;
-- whether the values were detected automatically or edited by the user.
+- whether the values came from shared template defaults, automatic analysis, explicit re-analysis, or custom edits.
+
+## Shared template spacing (September 25, 2026)
+
+Eight Elite PNGs are included, bringing the portable library to 57 templates. `watermark-safe-areas.js` stores the supplied PDF's margins in pixels on a 1500 × 1500 template:
+
+| Account | Default top / bottom | Top-margin exceptions |
+| --- | --- | --- |
+| US Auto Nation | 85 / 130 | GLS PI, PS GLS, PS PI: 140; PS GLS PI: 160 |
+| US Auto Seat Cover | 180 / 135 | None |
+| US Auto Seat Factory | 100 / 150 | Normal: 50; GLS PI, PS GLS, PS PI: 150; PS GLS PI: 215 |
+| DIY | 190 / 100 | None |
+| Master | 90 / 170 | GLS PI, PS GLS, PS PI: 130; PS GLS PI: 170 |
+| Premium | 150 / 100 | PS GLS PI: 170 |
+| Elite | 170 / 120 | GLS PI, PS GLS, PS PI: 200; PS GLS PI: 250 |
+| DSA eBay | 110 / 130 | Applies to its single shared template |
+
+Master's existing `PLS PI.png` filename is treated as `GLS PI` for both matching and spacing. The supplied templates retain their stable IDs. Run `node scripts/build-watermark-assets.cjs` to refresh the embedded images after updating PNG assets.
 
 The automatic analyzer reads the watermark PNG alpha channel row by row and selects the largest full-width clear band. This approach also handles templates whose artwork is in a corner or near the center, because all artwork above the clear band becomes the top margin and all artwork below it becomes the bottom margin.
 
-The **Analyze** button recalculates a template from its current pixels. Editing either margin immediately recalculates the middle area and updates already prepared images using that template.
+The **Analyze** button recalculates a template from its current pixels. **Use default** restores the supplied margins for bundled templates. Editing either margin immediately recalculates the middle area and updates already prepared images using that template.
 
-Safe-area metadata is stored in IndexedDB database `photo-studio-assets`, object store `assets`, under stable keys based on the watermark section and template ID. If no saved value exists on a device, the deterministic automatic analyzer recreates it from the bundled watermark, so the defaults work on a new system.
+Safe-area overrides are stored in IndexedDB database `photo-studio-assets`, object store `assets`, under stable keys based on the watermark section and template ID. Shared PDF defaults replace older automatically measured values on existing devices. Explicit custom edits and explicit re-analysis are preserved. A new device uses the shared defaults for bundled templates and automatic analysis for personal templates.
 
 ## Smart background separation
 
@@ -65,7 +84,7 @@ The reconstructed background fills the output canvas. The transparent product la
 
 ## Safe-area fitting
 
-The top and bottom margins are converted from the watermark's native dimensions to the current export canvas dimensions. A small internal clearance is added so the product does not touch watermark artwork.
+The top and bottom margins are converted from template dimensions to the current export canvas dimensions. PDF defaults specify the complete vertical clearance, with no extra vertical inset. Automatically analyzed safe areas retain a small internal clearance.
 
 The product's visible bounding box is scaled with `contain` logic. Rotation is included in the fit calculation. At the initial 100% image size:
 
@@ -103,6 +122,8 @@ The canvas renderer recognizes this state for preview, thumbnails, individual ex
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+The Elite/default-spacing update passed 16 browser checks: all 64 PDF margin mappings, all 57 bundled image loads, migration of old automatic margins, custom override persistence and reset, filename detection, mixed-batch processing, proportional safe margins, native Close View bounds and duplication, exact PNG pixel comparison, and the Apply Workflow button lifecycle. No browser JavaScript errors were reported.
 
 Phase 1.2 was tested in a Chromium browser with generated product images and the real bundled US Auto Nation templates.
 

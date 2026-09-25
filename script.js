@@ -596,7 +596,8 @@ function smartSafeRect(preparation) {
   if (bottom - top < canvas.height * .08) { top = 0; bottom = canvas.height; }
   let padding = Math.max(10, Math.round(Math.min(canvas.width, canvas.height) * .018));
   padding = Math.min(padding, Math.max(0, (bottom - top) / 4));
-  return {x: padding, y: top + padding, width: Math.max(1, canvas.width - padding * 2), height: Math.max(1, bottom - top - padding * 2)};
+  const verticalPadding = safeArea.clearance === 0 ? 0 : padding;
+  return {x: padding, y: top + verticalPadding, width: Math.max(1, canvas.width - padding * 2), height: Math.max(1, bottom - top - verticalPadding * 2)};
 }
 function smartProductGeometry(item) {
   const preparation = item?.smartPrep;
@@ -632,9 +633,22 @@ function drawSmartPreparedBase(item) {
   ctx.drawImage(preparation.foreground, bounds.x, bounds.y, bounds.width, bounds.height, -geometry.drawWidth / 2, -geometry.drawHeight / 2, geometry.drawWidth, geometry.drawHeight);
   ctx.restore();
 }
+function getBaseLayerDrawSize(item, image) {
+  const selectedScale = (item.scale ?? 100) / 100;
+  if (item.originalSize) return {width: image.width * selectedScale, height: image.height * selectedScale};
+  const quarterTurn = Math.abs((item.rotation || 0) % 180) > 0;
+  const gap = Number(watermarkGap.value) || 0;
+  const maxW = Math.max(1, canvas.width - gap * 2) * selectedScale;
+  const maxH = Math.max(1, canvas.height - gap * 2) * selectedScale;
+  const fit = (item.fit || fitSelect.value) === 'cover'
+    ? Math.max(maxW / (quarterTurn ? image.height : image.width), maxH / (quarterTurn ? image.width : image.height))
+    : Math.min(maxW / (quarterTurn ? image.height : image.width), maxH / (quarterTurn ? image.width : image.height));
+  return {width: image.width * fit, height: image.height * fit};
+}
 function drawImage(item) {
   if (item.smartPrep?.enabled) { drawSmartPreparedBase(item); return; }
-  const image = getImageSource(item); const { rotation } = item; const quarterTurn = Math.abs(rotation % 180) > 0; const gap = Number(watermarkGap.value) || 0; const selectedScale = item.scale ?? 100; const maxW = Math.max(1, canvas.width - gap * 2) * selectedScale / 100; const maxH = Math.max(1, canvas.height - gap * 2) * selectedScale / 100; const fit = (item.fit || fitSelect.value) === 'cover' ? Math.max(maxW / (quarterTurn ? image.height : image.width), maxH / (quarterTurn ? image.width : image.height)) : Math.min(maxW / (quarterTurn ? image.height : image.width), maxH / (quarterTurn ? image.width : image.height)); const drawW = image.width * fit; const drawH = image.height * fit;
+  const image = getImageSource(item), {rotation} = item;
+  const {width: drawW, height: drawH} = getBaseLayerDrawSize(item, image);
   ctx.save(); ctx.translate(canvas.width / 2 + (item.offsetX || 0), canvas.height / 2 + (item.offsetY || 0)); ctx.rotate(rotation * Math.PI / 180); ctx.scale(item.mirror ? -1 : 1, item.flipY ? -1 : 1); if (item.shadow) { const distance = Number(item.shadowDistance ?? 18); const angle = Number(item.shadowAngle ?? 90); ctx.shadowColor = `rgba(36, 25, 20, ${Number(item.shadowStrength ?? 80) / 100})`; ctx.shadowBlur = 26; ctx.shadowOffsetX = Math.cos(angle * Math.PI / 180) * distance; ctx.shadowOffsetY = Math.sin(angle * Math.PI / 180) * distance; } ctx.drawImage(image, -drawW / 2, -drawH / 2, drawW, drawH); ctx.restore();
 }
 function getBaseLayerRect(item) {
@@ -644,15 +658,7 @@ function getBaseLayerRect(item) {
   }
   const image = getImageSource(item);
   const rotation = item.rotation || 0;
-  const rotatedDimensions = Math.abs(rotation % 180) > 0;
-  const gap = Number(watermarkGap.value) || 0;
-  const selectedScale = item.scale ?? 100;
-  const maxW = Math.max(1, canvas.width - gap * 2) * selectedScale / 100;
-  const maxH = Math.max(1, canvas.height - gap * 2) * selectedScale / 100;
-  const fit = (item.fit || fitSelect.value) === 'cover'
-    ? Math.max(maxW / (rotatedDimensions ? image.height : image.width), maxH / (rotatedDimensions ? image.width : image.height))
-    : Math.min(maxW / (rotatedDimensions ? image.height : image.width), maxH / (rotatedDimensions ? image.width : image.height));
-  const drawW = image.width * fit, drawH = image.height * fit;
+  const {width: drawW, height: drawH} = getBaseLayerDrawSize(item, image);
   const radians = rotation * Math.PI / 180;
   return {
     x: canvas.width / 2 + (item.offsetX || 0),
@@ -1308,7 +1314,7 @@ const DEFAULT_WATERMARK_LIBRARY = [
   {folder: 'DIY', files: ['PS.png', 'PS PI.png', 'PS GLS.png', 'PS GLS PI.png', 'PI.png', 'Normal.png', 'GLS.png', 'GLS PI.png']},
   {folder: 'Master', files: ['PS.png', 'PS PI.png', 'PS GLS.png', 'PS GLS PI.png', 'PLS PI.png', 'PI.png', 'Normal.png', 'GLS.png']},
   {folder: 'Premium', files: ['PS.png', 'PS PI.png', 'PS GLS.png', 'PS GLS PI.png', 'PI.png', 'Normal.png', 'GLS.png', 'GLS PI.png']},
-  {folder: 'Elite', files: []},
+  {folder: 'Elite', files: ['PS.png', 'PS PI.png', 'PS GLS.png', 'PS GLS PI.png', 'PI.png', 'Normal.png', 'GLS.png', 'GLS PI.png']},
   {folder: 'DSA eBay', files: ['DSA Seat Factory - eBay.png']}
 ];
 const watermarkSections = WATERMARK_SECTION_NAMES.map((name, sectionIndex) => ({
@@ -1377,6 +1383,9 @@ WATERMARK_SECTION_DISPLAY_ORDER.forEach((sectionIndex) => {
 function listingSourceName(item) { return item?.displayName || item?.file?.name || 'Untitled image'; }
 function detectListingImageType(fileName) {
   const stem = String(fileName || '').replace(/\.[^/.]+$/, '').toUpperCase();
+  if (/(?:^|[^A-Z])CLOSE[\s_-]*VIEW(?=$|[^A-Z])/.test(stem)) {
+    return {code: 'CLOSE VIEW', type: 'normal', label: 'Close View · original size', closeView: true};
+  }
   const match = stem.match(/(?:^|[^A-Z])(DPTB|DPB|DPT|DTB|PTB|DB|PB|DT|PT)(?=$|[^A-Z])/);
   const code = match?.[1] || 'NORMAL';
   const type = LISTING_CODE_TYPES[code] || 'normal';
@@ -1406,7 +1415,20 @@ function normalizedWatermarkSafeArea(value, image) {
     const minimumMiddle = Math.max(1, Math.round(canvasHeight * .04));
     bottomMargin = Math.max(0, canvasHeight - topMargin - minimumMiddle);
   }
-  return {canvasWidth, canvasHeight, topMargin, bottomMargin, middleHeight: canvasHeight - topMargin - bottomMargin, source: value?.source === 'custom' ? 'custom' : 'automatic'};
+  const source = ['custom', 'template', 'analyzed'].includes(value?.source) ? value.source : 'automatic';
+  return {canvasWidth, canvasHeight, topMargin, bottomMargin, middleHeight: canvasHeight - topMargin - bottomMargin, source, ...(value?.clearance === 0 ? {clearance: 0} : {})};
+}
+function defaultWatermarkSafeArea(sectionIndex, template) {
+  if (!template.builtIn) return null;
+  const defaults = globalThis.DEFAULT_WATERMARK_SAFE_AREAS;
+  const account = defaults?.accounts[WATERMARK_SECTION_NAMES[sectionIndex]];
+  if (!account) return null;
+  const name = template.src.split('/').pop().replace(/\.[^/.]+$/, '').replace(/^PLS PI$/, 'GLS PI');
+  return normalizedWatermarkSafeArea({
+    canvasWidth: defaults.canvasWidth, canvasHeight: defaults.canvasHeight,
+    topMargin: account.templates?.[name] ?? account.top, bottomMargin: account.bottom,
+    source: 'template', clearance: 0
+  });
 }
 function analyzeWatermarkSafeArea(image) {
   const nativeWidth = image?.naturalWidth || image?.width || 1, nativeHeight = image?.naturalHeight || image?.height || 1;
@@ -1460,16 +1482,21 @@ async function saveWatermarkSafeArea(sectionIndex, template, safeArea) {
 async function getWatermarkSafeArea(sectionIndex, template, image, forceAnalysis = false) {
   const key = listingTemplateKey(sectionIndex, template);
   if (!forceAnalysis && watermarkSafeAreaCache.has(key)) return watermarkSafeAreaCache.get(key);
-  if (!forceAnalysis && template.safeArea) {
-    const normalized = normalizedWatermarkSafeArea(template.safeArea, image); watermarkSafeAreaCache.set(key, normalized); return normalized;
-  }
   if (!forceAnalysis) {
-    try {
-      const stored = await assetStore('readonly', store => store.get(watermarkSafeAreaStorageKey(sectionIndex, template.id)));
-      if (stored) { const normalized = normalizedWatermarkSafeArea(stored, image); watermarkSafeAreaCache.set(key, normalized); template.safeArea = normalized; return normalized; }
-    } catch {}
+    const defaults = defaultWatermarkSafeArea(sectionIndex, template);
+    let stored = template.safeArea;
+    if (!stored) {
+      try { stored = await assetStore('readonly', store => store.get(watermarkSafeAreaStorageKey(sectionIndex, template.id))); } catch {}
+    }
+    // Replace older automatic measurements with the shared PDF defaults, retaining manual overrides.
+    const value = stored && (stored.source === 'custom' || stored.source === 'analyzed' || !defaults) ? stored : defaults;
+    if (value) {
+      const normalized = normalizedWatermarkSafeArea(value, image);
+      watermarkSafeAreaCache.set(key, normalized); template.safeArea = normalized; return normalized;
+    }
   }
   const analyzed = analyzeWatermarkSafeArea(image);
+  if (forceAnalysis) analyzed.source = 'analyzed';
   await saveWatermarkSafeArea(sectionIndex, template, analyzed);
   return analyzed;
 }
@@ -1519,6 +1546,15 @@ async function renderListingTemplateManager() {
         syncCard(); setStatus(`${template.name} safe area saved.`);
       };
       topInput.addEventListener('change', saveInputs); bottomInput.addEventListener('change', saveInputs);
+      const defaults = defaultWatermarkSafeArea(plan.sectionIndex, template);
+      if (defaults) {
+        const resetButton = document.createElement('button'); resetButton.type = 'button'; resetButton.className = 'listing-safe-analyze'; resetButton.textContent = 'Use default';
+        resetButton.addEventListener('click', async () => {
+          safeArea = await saveWatermarkSafeArea(plan.sectionIndex, template, defaults);
+          syncCard(); setStatus(`${template.name} default spacing restored.`);
+        });
+        analyzeButton.before(resetButton);
+      }
       analyzeButton.addEventListener('click', async () => {
         analyzeButton.disabled = true; analyzeButton.textContent = 'Analyzing…';
         try { safeArea = await getWatermarkSafeArea(plan.sectionIndex, template, image, true); syncCard(); setStatus(`${template.name} safe area analyzed and saved.`); }
@@ -1554,6 +1590,7 @@ function createListingPlan() {
 function listingStatusForRow(plan, row) {
   if (!plan.section || !plan.materialRule) return {text: 'Waiting', className: ''};
   if (!row.template) return {text: 'Missing', className: 'missing'};
+  if (row.detection.closeView) return {text: 'Original size', className: ''};
   const preparationMatches = row.item.smartPrep?.templateKey === listingTemplateKey(plan.sectionIndex, row.template);
   if (listingSmartPrep.checked && preparationMatches) {
     return row.item.smartPrep.mode === 'fallback' ? {text: 'Review fit', className: 'fallback'} : {text: 'Smart ready', className: ''};
@@ -1628,7 +1665,7 @@ async function applyListingWatermarks() {
     const safeArea = useSmartPreparation ? await getWatermarkSafeArea(plan.sectionIndex, template, image) : null;
     templateAssets.set(key, {image, safeArea});
   }));
-  let fallbackCount = 0;
+  let fallbackCount = 0, preparedCount = 0, closeViewCount = 0;
   for (let index = 0; index < plan.rows.length; index += 1) {
     const row = plan.rows[index], key = listingTemplateKey(plan.sectionIndex, row.template), asset = templateAssets.get(key);
     row.item.watermarkImage = asset.image;
@@ -1636,10 +1673,17 @@ async function applyListingWatermarks() {
     row.item.watermarkOpacity = 100;
     row.item.watermarkSection = plan.sectionIndex;
     row.item.watermarkTemplateId = row.template.id;
-    if (useSmartPreparation) {
+    row.item.originalSize = Boolean(row.detection.closeView);
+    if (row.detection.closeView) {
+      row.item.smartPrep = null; row.item.removeBg = false; row.item.processed = null;
+      row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
+      row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100;
+      closeViewCount += 1;
+    } else if (useSmartPreparation) {
       listingApplyButton.textContent = `Preparing ${index + 1}/${plan.rows.length}`;
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
       row.item.smartPrep = createSmartPreparation(row.item.image, asset.safeArea, key);
+      preparedCount += 1;
       if (row.item.smartPrep.mode === 'fallback') fallbackCount += 1;
       row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
       row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100; row.item.fit = 'contain';
@@ -1650,11 +1694,12 @@ async function applyListingWatermarks() {
   activeWatermarkSection = plan.sectionIndex;
   activeWatermarkTemplateId = plan.rows[0]?.template.id || null;
   opacityInput.value = 100;
-  syncWatermarkControls(); renderWatermarkLibrary(); renderThumbs(); drawActive();
-  const preparationMessage = useSmartPreparation
+  syncSelectedLayerControls(); syncWatermarkControls(); renderWatermarkLibrary(); renderThumbs(); drawActive();
+  const preparationMessage = preparedCount
     ? ` Smart preparation completed${fallbackCount ? ` with ${fallbackCount} full-image fallback${fallbackCount === 1 ? '' : 's'}` : ''}.`
     : '';
-  setStatus(`Listing workflow applied to ${plan.rows.length} image${plan.rows.length === 1 ? '' : 's'} for ${plan.section.name}.${preparationMessage}`);
+  const closeViewMessage = closeViewCount ? ` ${closeViewCount} Close View image${closeViewCount === 1 ? '' : 's'} kept at original size with background intact.` : '';
+  setStatus(`Listing workflow applied to ${plan.rows.length} image${plan.rows.length === 1 ? '' : 's'} for ${plan.section.name}.${preparationMessage}${closeViewMessage}`);
   return plan;
 }
 listingOpenButton.setAttribute('aria-controls', 'listing-panel');
