@@ -2216,7 +2216,14 @@ async function createZip(entries) {
   endView.setUint32(0, 0x06054b50, true); endView.setUint16(4, 0, true); endView.setUint16(6, 0, true); endView.setUint16(8, entries.length, true); endView.setUint16(10, entries.length, true); endView.setUint32(12, centralSize, true); endView.setUint32(16, localOffset, true); endView.setUint16(20, 0, true);
   return new Blob([...localParts, ...centralParts, end], {type: 'application/zip'});
 }
-async function exportBatchArchive(batchItems, format, archiveName = 'photo-studio-batch.zip', progressLabel = 'Exporting') {
+function exportBatchFileName(batchItems) {
+  const folderNames = [...new Set(batchItems.map((item) =>
+    Number.isInteger(item.watermarkSection) ? watermarkSections[item.watermarkSection]?.name : null
+  ).filter(Boolean))];
+  const name = folderNames.length ? folderNames.join(' + ') : 'photo-studio-batch';
+  return `${name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim()}.zip`;
+}
+async function exportBatchArchive(batchItems, format, archiveName = exportBatchFileName(batchItems), progressLabel = 'Exporting') {
   const entries = [];
   for (let index = 0; index < batchItems.length; index += 1) {
     setStatus(`${progressLabel} ${index + 1} of ${batchItems.length}…`);

@@ -83,6 +83,7 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 - JPG, PNG, and WebP output.
 - Export the current image.
 - Export the complete batch as a browser-generated ZIP.
+- Batch ZIP names match the applied template's account folder, such as `Elite.zip`, `DIY.zip`, or `US Auto Nation.zip`. Mixed accounts use their folder names joined with ` + `; batches without an assigned template keep `photo-studio-batch.zip`.
 - Export prepared eBay listing images with the header's current-image or Export Batch controls.
 
 ## Run locally
