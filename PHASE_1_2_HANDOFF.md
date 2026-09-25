@@ -24,7 +24,7 @@ The Listing dialog uses a single blue (`#007aff`) **Apply Workflow** button. App
 
 The **Smart image preparation** checkbox is enabled by default in Listing. Turning it off only assigns the matched watermarks, while Close View images still restore their original size and background.
 
-**Close View exception:** CPIS subtype `cv`, or standalone filenames such as `DTcv`, `DOPTcv`, `Close View`, `Close_View`, `Close-View`, or `CloseView` (case-insensitive), use the account's Normal template and bypass product separation, background rebuilding, and automatic fitting, even with smart preparation enabled. Applying the workflow restores the original background and centers the unrotated source at 100% native pixel size. The `originalSize` flag makes preview, layer bounds, duplication of batch images, and export use the same dimensions. The configured output canvas still controls the export dimensions; larger native images can extend past that canvas, and smaller images leave space around them.
+**Close View exception:** CPIS subtype `cv`, or standalone filenames such as `DTcv`, `DOPTcv`, `Close View`, `Close_View`, `Close-View`, or `CloseView` (case-insensitive), use the account's Normal template and bypass product separation, background rebuilding, and automatic fitting, even with smart preparation enabled. Applying the workflow restores the original background and centers the unrotated source at 100% native pixel size. Close Views are exempt from the 50px fitting inset to preserve their native size. Preview, layer bounds, duplication, clipboard and export share this rule. Remove BG, Remove All BG and Ctrl+B skip these sources, including in mixed selections; scale controls cannot shrink them below 100%. Rendering also bypasses stale removal/preparation state. Resolved metadata takes priority over filenames, and layer copies retain their source's Close View classification. The configured output canvas still controls the export dimensions; larger native images can extend past that canvas, and smaller images leave space around them.
 
 ## CPIS metadata support
 
@@ -92,7 +92,7 @@ The reconstructed background fills the output canvas. The transparent product la
 
 ## Safe-area fitting
 
-The top and bottom margins are converted from template dimensions to the current export canvas dimensions. PDF defaults specify the complete vertical clearance, with no extra vertical inset. Automatically analyzed safe areas retain a small internal clearance.
+The top and bottom margins are converted from template dimensions using the same centered cover transform as the watermark, including non-square outputs. An additional **50 output-pixel inset** is applied at the top, bottom and canvas sides for every prepared product. It is independent of browser zoom and does not scale with the template. Old `clearance: 0` values no longer bypass this minimum, including on custom margins. Applying the workflow rejects configurations that leave no room for the gap instead of silently discarding the margins.
 
 The product's visible bounding box is scaled with `contain` logic. Rotation is included in the fit calculation. At the initial 100% image size:
 
@@ -101,9 +101,9 @@ The product's visible bounding box is scaled with `contain` logic. Rotation is i
 - no product cropping occurs;
 - the product is centered in the available safe rectangle.
 
-For templates named **Normal**, a separated product can grow proportionally by up to 8% and move upward into the clear space between the top logos. The renderer samples the product silhouette against the actual watermark alpha mask, leaving a small gap around the top artwork and preserving the canvas edges and bottom clearance. Width-limited products can move upward without additional enlargement. Close View images, unseparated fallback images, and explicit custom margins keep their ordinary behavior. Re-analysis and **Use default** allow automatic Normal positioning again.
+Normal templates now use the same centered safe-area fit as Main and Passenger templates. This supersedes the previous upward lift and extra 8% enlargement, which could reduce the requested gap and shift the product away from the center. Proportions and rotated bounds are preserved; full-image fallbacks use the same inset.
 
-Normal positioning is calculated at the automatic 100% size, then the user's scale and drag offsets are applied. The geometry and watermark masks are cached so dragging, scrolling, thumbnails, and export use the same placement without repeating pixel analysis on every frame.
+Positioning is calculated at the automatic 100% size, then the user's manual scale and drag offsets are applied. The 50px gap and safe-area centering describe automatic placement; deliberate manual adjustments can change them. The manual center action centers the selected layer/group on the canvas. Base-layer position updates use the actual current geometry, fixing drift during centering, dragging and group scaling when the safe-area center differs from the canvas center.
 
 After preparation, the normal editor controls remain available. The product can be dragged, moved with arrow keys, Shift-dragged on one axis, resized with the Image Size control or mouse wheel, rotated, flipped, centered, and given a per-layer shadow. The reconstructed background remains fixed while those product adjustments are made.
 
@@ -134,6 +134,8 @@ The canvas renderer recognizes this state for preview, thumbnails, individual ex
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+The spacing/centering update passed the 24-check `tests/listing-preparation.browser.cjs` suite: 1,368 placement cases across 57 templates, four output sizes, two product proportions and three rotations; output pixels in JPG/PNG/WebP; movement and centering without drift; Close View protection through buttons, Ctrl+B, mixed selections, duplicates and clipboard; native pixels even with stale removal/scale/preparation state; oversized Close Views; and invalid-margin rejection. The seven metadata unit tests and 19 CPIS browser integration checks also passed.
 
 The CPIS integration passed 7 unit tests covering metadata validation and all 55 primary/shared-code and subtype combinations, 19 browser integration checks, and the existing 16-check Elite/Close View regression suite. Metadata precedence, atomic validation errors, duplicate identity, visual undo isolation, JSON import, bad image decoding, and the exact pixels of a metadata-driven Close View export were checked.
 

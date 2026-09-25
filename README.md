@@ -31,7 +31,7 @@ Detailed handoffs are available in:
 - Click empty space outside the canvas to deselect layers; editing controls preserve the selection.
 - Use `Delete` to remove selected layers, `Ctrl + C`/`Ctrl + V` to copy and paste them, `Ctrl + Enter` to center them, and `Ctrl + B` to toggle their backgrounds off or on.
 - Per-layer shadows with opacity, angle, and distance controls.
-- Manual background removal for selected layers or the complete batch.
+- Manual background removal for selected layers or the complete batch; Close View sources are skipped, including by Ctrl+B.
 - Undo and redo.
 
 ### Watermarks
@@ -70,10 +70,10 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 - Reconstruct the background behind the product's original position.
 - Analyze each watermark's alpha channel to find its largest clear horizontal band.
 - Fit the complete product proportionally inside that safe area without cropping.
-- Normal templates use the clear upper-center space: products can grow by up to 8% and move slightly upward, with the product silhouette checked against the top artwork. Close View images and explicit custom top margins are excluded.
+- Keep a minimum 50 output-pixel gap inside the template margins, including Normal templates and custom margins. Automatic fitting keeps the product centered without an upward shift.
 - Center the product horizontally and vertically in the available area.
 - Review and edit top and bottom margins in the Watermark Template Manager.
-- Bundled templates use the account/template margins from `Template Sizes.pdf`, saved in `watermark-safe-areas.js` at the native 1500 × 1500 template size and scaled to the output canvas. These margins have no additional vertical inset.
+- Bundled templates use the account/template margins from `Template Sizes.pdf`, saved in `watermark-safe-areas.js` at the native 1500 × 1500 template size. Margins follow the watermark's centered cover scaling; the additional 50px gap stays fixed in output pixels, independent of browser zoom.
 - Older automatic measurements are replaced by the shared defaults; explicit custom margins are preserved. **Use default** restores the supplied margins, and **Analyze** saves a new measurement.
 - Save margin overrides in IndexedDB.
 - Preserve a full-image fallback when reliable separation is not possible.
@@ -129,9 +129,11 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - ZIP files are generated locally without a third-party archive library.
 - Smart product separation is optimized for clean or gently graded marketplace backgrounds. Difficult scenes use a non-destructive full-image fallback marked **Review fit**.
 - No uploaded product images leave the browser.
-- Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. Set the output dimensions to the source dimensions when an edge-to-edge, uncropped Close View is needed. Manual resizing remains available after applying the workflow.
+- Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. They are exempt from safe-area fitting and the 50px inset so that their original size and background are preserved. A source larger than the output canvas can extend beyond its edges; increase the output dimensions when needed. Manual enlargement is available, but shrinking below 100% and background removal are blocked for Close View sources and their layer/batch copies.
 
 ## Validation
+
+The spacing/centering update passed 24 browser checks, including 1,368 placement cases across all 57 templates, four output sizes, two product proportions and three rotations; JPG/PNG/WebP pixel checks; prepared-layer movement/centering; Close View background and size protection; duplicates; and impossible-margin validation. Run `node tests/listing-preparation.browser.cjs` with Playwright available for testing. Optional `PLAYWRIGHT_MODULE` and `BROWSER_EXECUTABLE` environment variables can point to existing installations.
 
 The CPIS update passed 7 unit tests (including all 55 variation/shared-component and subtype combinations), 19 integration browser checks, and the existing 16-check Elite/Close View browser suite. Run `node --test tests/listing-metadata.test.cjs` for the repeatable metadata checks.
 

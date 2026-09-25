@@ -397,11 +397,12 @@ async function duplicateBatchImage(index) {
 }
 function updateRemoveBackgroundControls() {
   const item = files[activeIndex];
-  const selected = item ? getSelectedLayerEntities(item) : [];
+  const selected = item ? getSelectedLayerEntities(item).filter((entity) => !isCloseViewImage(entity.data)) : [];
+  const eligible = files.flatMap((entry) => [entry, ...(entry.layers || [])]).filter((entry) => !isCloseViewImage(entry));
   removeBgButton.disabled = !selected.length;
-  removeAllBgButton.disabled = !files.length;
+  removeAllBgButton.disabled = !eligible.length;
   removeBgButton.classList.toggle('active', Boolean(selected.length) && selected.every((entity) => entity.data.removeBg));
-  removeAllBgButton.classList.toggle('active', Boolean(files.length) && files.every((entry) => entry.removeBg && (entry.layers || []).every((layer) => layer.removeBg)));
+  removeAllBgButton.classList.toggle('active', Boolean(eligible.length) && eligible.every((entry) => entry.removeBg));
 }
 function removeBatchImage(index) {
   const item = files[index]; if (!item) return;
@@ -448,13 +449,24 @@ function createBackgroundRemovedSource(source) {
   for (let i = 0; i < pixels.data.length; i += 4) { const distance = Math.abs(pixels.data[i] - sample[0]) + Math.abs(pixels.data[i + 1] - sample[1]) + Math.abs(pixels.data[i + 2] - sample[2]); if (distance < 95) pixels.data[i + 3] = 0; else if (distance < 150) pixels.data[i + 3] = Math.round(((distance - 95) / 55) * pixels.data[i + 3]); }
   workCtx.putImageData(pixels, 0, 0); return work;
 }
+function isCloseViewImage(item) {
+  if (!item) return false;
+  // Resolved CPIS metadata takes priority, including a non-cv role on a cv filename.
+  if (item.listingMetadata) {
+    try { return Boolean(PhotoStudioMetadata.resolveImage(item.listingMetadata).closeView); }
+    catch { return false; }
+  }
+  if (typeof item.closeView === 'boolean') return item.closeView;
+  return Boolean(PhotoStudioMetadata.detectFilename(item.file?.name || item.name || '').closeView);
+}
+function minimumLayerScale(item) { return isCloseViewImage(item) ? 100 : 10; }
 function getImageSource(item) {
-  if (!item.removeBg) return item.image;
+  if (isCloseViewImage(item) || !item.removeBg) return item.image;
   if (!item.processed) item.processed = createBackgroundRemovedSource(item.image);
   return item.processed;
 }
 function getAddedLayerSource(layer) {
-  if (!layer.removeBg) return layer.image;
+  if (isCloseViewImage(layer) || !layer.removeBg) return layer.image;
   if (!layer.processed) layer.processed = createBackgroundRemovedSource(layer.image);
   return layer.processed;
 }
@@ -597,110 +609,32 @@ function createSmartPreparation(source, safeArea, templateKey = '') {
     analysisSize: {width, height}
   };
 }
-function smartSafeRect(preparation) {
+const SMART_WATERMARK_GAP = 50; // Output pixels, independent of template size or browser zoom.
+function smartSafeRect(preparation, outputWidth = canvas.width, outputHeight = canvas.height) {
   const safeArea = preparation?.safeArea || {};
-  const nativeHeight = Math.max(1, Number(safeArea.canvasHeight) || canvas.height);
+  const nativeWidth = Math.max(1, Number(safeArea.canvasWidth) || outputWidth);
+  const nativeHeight = Math.max(1, Number(safeArea.canvasHeight) || outputHeight);
   const topMargin = clampNumber(Number(safeArea.topMargin) || 0, 0, nativeHeight);
   const bottomMargin = clampNumber(Number(safeArea.bottomMargin) || 0, 0, nativeHeight - topMargin);
-  let top = topMargin / nativeHeight * canvas.height;
-  let bottom = canvas.height - bottomMargin / nativeHeight * canvas.height;
-  if (bottom - top < canvas.height * .08) { top = 0; bottom = canvas.height; }
-  let padding = Math.max(10, Math.round(Math.min(canvas.width, canvas.height) * .018));
-  padding = Math.min(padding, Math.max(0, (bottom - top) / 4));
-  const verticalPadding = safeArea.clearance === 0 ? 0 : padding;
-  return {x: padding, y: top + verticalPadding, width: Math.max(1, canvas.width - padding * 2), height: Math.max(1, bottom - top - verticalPadding * 2)};
-}
-const normalHeaderMaskCache = new WeakMap();
-const normalTopFitCache = new WeakMap();
-function normalHeaderMask(image) {
-  const key = `${canvas.width}:${canvas.height}`;
-  const cached = normalHeaderMaskCache.get(image);
-  if (cached?.key === key) return cached;
-  const scale = Math.min(1, 320 / Math.max(canvas.width, canvas.height));
-  const width = Math.max(1, Math.round(canvas.width * scale)), height = Math.max(1, Math.round(canvas.height * scale));
-  const work = document.createElement('canvas'); work.width = width; work.height = height;
-  const context = work.getContext('2d', {willReadFrequently: true});
-  const fit = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
-  const drawWidth = image.naturalWidth * fit, drawHeight = image.naturalHeight * fit;
-  context.scale(width / canvas.width, height / canvas.height);
-  context.drawImage(image, (canvas.width - drawWidth) / 2, (canvas.height - drawHeight) / 2, drawWidth, drawHeight);
-  const pixels = context.getImageData(0, 0, width, height).data;
-  const mask = new Uint8Array(width * height);
-  // Expand artwork by two analysis pixels to leave a visible gap around the logos.
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (pixels[(y * width + x) * 4 + 3] <= 16) continue;
-      for (let dy = Math.max(0, y - 2); dy <= Math.min(height - 1, y + 2); dy += 1) {
-        mask.fill(1, dy * width + Math.max(0, x - 2), dy * width + Math.min(width, x + 3));
-      }
-    }
-  }
-  const result = {key, width, height, mask}; normalHeaderMaskCache.set(image, result); return result;
-}
-function fitNormalTemplateTop(item, geometry) {
-  const preparation = item.smartPrep;
-  const template = findWatermarkTemplate(item.watermarkSection, item.watermarkTemplateId);
-  if (item.originalSize || preparation.mode !== 'separated' || preparation.safeArea.source === 'custom'
-      || normalizeListingTemplateName(template?.name) !== 'normal' || !item.watermarkImage?.naturalWidth) return geometry;
-  const key = [canvas.width, canvas.height, geometry.x, geometry.y, geometry.width, geometry.height, geometry.safeRect.y,
-    item.rotation || 0, Boolean(item.mirror), Boolean(item.flipY)].join(':');
-  const cached = normalTopFitCache.get(preparation);
-  if (cached?.key === key && cached.image === item.watermarkImage) return {...geometry, ...cached.adjustment};
-  let adjustment = {};
-  try {
-    const top = geometry.y - geometry.height / 2;
-    const edgeGap = Math.max(10, Math.min(canvas.width, canvas.height) * .012);
-    const travel = Math.max(0, Math.min(canvas.height * .08, top - edgeGap));
-    const growth = Math.max(0, Math.min(.08, geometry.safeRect.width / geometry.width - 1, travel / geometry.height));
-    const lift = travel - geometry.height * growth;
-    if (travel > 0) {
-      const header = normalHeaderMask(item.watermarkImage);
-      const work = document.createElement('canvas'); work.width = header.width; work.height = header.height;
-      const context = work.getContext('2d', {willReadFrequently: true});
-      const headerRows = Math.min(header.height, Math.ceil(Math.max(geometry.safeRect.y + edgeGap, canvas.height * .2) / canvas.height * header.height));
-      const candidate = (amount) => {
-        const factor = 1 + growth * amount;
-        return {y: geometry.y - (geometry.height * growth / 2 + lift) * amount,
-          width: geometry.width * factor, height: geometry.height * factor,
-          drawWidth: geometry.drawWidth * factor, drawHeight: geometry.drawHeight * factor};
-      };
-      const fits = (amount) => {
-        const next = candidate(amount), bounds = geometry.bounds;
-        context.clearRect(0, 0, work.width, work.height); context.save();
-        context.scale(work.width / canvas.width, work.height / canvas.height);
-        context.translate(geometry.x, next.y); context.rotate((item.rotation || 0) * Math.PI / 180);
-        context.scale(item.mirror ? -1 : 1, item.flipY ? -1 : 1);
-        context.drawImage(preparation.foreground, bounds.x, bounds.y, bounds.width, bounds.height, -next.drawWidth / 2, -next.drawHeight / 2, next.drawWidth, next.drawHeight);
-        context.restore();
-        const pixels = context.getImageData(0, 0, work.width, headerRows).data;
-        for (let index = 0; index < headerRows * work.width; index += 1) {
-          if (header.mask[index] && pixels[index * 4 + 3] > 16) return false;
-        }
-        return true;
-      };
-      if (fits(1)) adjustment = candidate(1);
-      else if (fits(0)) {
-        let low = 0, high = 1;
-        for (let step = 0; step < 9; step += 1) {
-          const middle = (low + high) / 2;
-          if (fits(middle)) low = middle; else high = middle;
-        }
-        adjustment = candidate(low);
-      }
-    }
-  } catch { /* Keep the ordinary safe-area fit if a template cannot be sampled. */ }
-  normalTopFitCache.set(preparation, {key, image: item.watermarkImage, adjustment});
-  return {...geometry, ...adjustment};
+  // Match paintWatermark's centered cover transform, including non-square exports.
+  const scale = Math.max(outputWidth / nativeWidth, outputHeight / nativeHeight);
+  const offsetY = (outputHeight - nativeHeight * scale) / 2;
+  const top = Math.max(0, offsetY + topMargin * scale);
+  const bottom = Math.min(outputHeight, offsetY + (nativeHeight - bottomMargin) * scale);
+  return {x: SMART_WATERMARK_GAP, y: top + SMART_WATERMARK_GAP,
+    width: Math.max(0, outputWidth - SMART_WATERMARK_GAP * 2),
+    height: Math.max(0, bottom - top - SMART_WATERMARK_GAP * 2)};
 }
 function smartProductGeometry(item) {
   const preparation = item?.smartPrep;
-  if (!preparation?.foreground || !preparation?.bounds) return null;
+  if (isCloseViewImage(item) || !preparation?.foreground || !preparation?.bounds) return null;
   const bounds = preparation.bounds, safeRect = smartSafeRect(preparation);
+  if (!safeRect.width || !safeRect.height) return null;
   const rotation = item.rotation || 0, radians = rotation * Math.PI / 180;
   const rotatedWidth = Math.abs(bounds.width * Math.cos(radians)) + Math.abs(bounds.height * Math.sin(radians));
   const rotatedHeight = Math.abs(bounds.width * Math.sin(radians)) + Math.abs(bounds.height * Math.cos(radians));
   const fit = Math.min(safeRect.width / Math.max(1, rotatedWidth), safeRect.height / Math.max(1, rotatedHeight));
-  const geometry = fitNormalTemplateTop(item, {
+  const geometry = {
     x: safeRect.x + safeRect.width / 2,
     y: safeRect.y + safeRect.height / 2,
     drawWidth: bounds.width * fit,
@@ -709,7 +643,7 @@ function smartProductGeometry(item) {
     height: rotatedHeight * fit,
     bounds,
     safeRect
-  });
+  };
   const scale = (item.scale ?? 100) / 100;
   return {...geometry, x: geometry.x + (item.offsetX || 0), y: geometry.y + (item.offsetY || 0),
     drawWidth: geometry.drawWidth * scale, drawHeight: geometry.drawHeight * scale,
@@ -732,6 +666,10 @@ function drawSmartPreparedBase(item) {
 }
 function getBaseLayerDrawSize(item, image) {
   const selectedScale = (item.scale ?? 100) / 100;
+  if (isCloseViewImage(item)) {
+    const size = imageSourceSize(image), scale = Math.max(1, selectedScale);
+    return {width: size.width * scale, height: size.height * scale};
+  }
   if (item.originalSize) return {width: image.width * selectedScale, height: image.height * selectedScale};
   const quarterTurn = Math.abs((item.rotation || 0) % 180) > 0;
   const gap = Number(watermarkGap.value) || 0;
@@ -743,13 +681,13 @@ function getBaseLayerDrawSize(item, image) {
   return {width: image.width * fit, height: image.height * fit};
 }
 function drawImage(item) {
-  if (item.smartPrep?.enabled) { drawSmartPreparedBase(item); return; }
+  if (item.smartPrep?.enabled && !isCloseViewImage(item)) { drawSmartPreparedBase(item); return; }
   const image = getImageSource(item), {rotation} = item;
   const {width: drawW, height: drawH} = getBaseLayerDrawSize(item, image);
   ctx.save(); ctx.translate(canvas.width / 2 + (item.offsetX || 0), canvas.height / 2 + (item.offsetY || 0)); ctx.rotate(rotation * Math.PI / 180); ctx.scale(item.mirror ? -1 : 1, item.flipY ? -1 : 1); if (item.shadow) { const distance = Number(item.shadowDistance ?? 18); const angle = Number(item.shadowAngle ?? 90); ctx.shadowColor = `rgba(36, 25, 20, ${Number(item.shadowStrength ?? 80) / 100})`; ctx.shadowBlur = 26; ctx.shadowOffsetX = Math.cos(angle * Math.PI / 180) * distance; ctx.shadowOffsetY = Math.sin(angle * Math.PI / 180) * distance; } ctx.drawImage(image, -drawW / 2, -drawH / 2, drawW, drawH); ctx.restore();
 }
 function getBaseLayerRect(item) {
-  if (item.smartPrep?.enabled) {
+  if (item.smartPrep?.enabled && !isCloseViewImage(item)) {
     const geometry = smartProductGeometry(item);
     return geometry ? {x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height} : {x: canvas.width / 2, y: canvas.height / 2, width: 0, height: 0};
   }
@@ -769,6 +707,10 @@ function getAddedLayerDrawRect(layer) {
   const sourceWidth = source?.naturalWidth || source?.width;
   const sourceHeight = source?.naturalHeight || source?.height;
   if (!sourceWidth || !sourceHeight) return {x: layer?.x || canvas.width / 2, y: layer?.y || canvas.height / 2, width: 0, height: 0};
+  if (isCloseViewImage(layer)) {
+    const scale = Math.max(1, (layer.scale ?? 100) / 100);
+    return {x: layer.x ?? canvas.width / 2, y: layer.y ?? canvas.height / 2, width: sourceWidth * scale, height: sourceHeight * scale};
+  }
   const fitWidth = (canvas.width * .32) / sourceWidth, fitHeight = (canvas.height * .32) / sourceHeight;
   const baseScale = layer.fit === 'cover' ? Math.max(fitWidth, fitHeight) : Math.min(fitWidth, fitHeight);
   const scale = baseScale * (layer.scale ?? 100) / 100;
@@ -822,6 +764,8 @@ function syncSelectedLayerControls() {
   const item = files[activeIndex];
   const selected = item ? getSelectedLayerEntities(item) : [];
   const primary = selected[0];
+  const minimumScale = selected.some((entity) => isCloseViewImage(entity.data)) ? 100 : 10;
+  imageScale.min = minimumScale; imageScaleValue.min = minimumScale;
   if (primary) {
     setImageScaleInputs(primary.data.scale ?? 100);
     fitSelect.value = primary.data.fit || 'contain';
@@ -843,7 +787,12 @@ function syncSelectedLayerControls() {
   updateRemoveBackgroundControls();
 }
 function setLayerEntityCenter(item, id, x, y) {
-  if (id === 'base') { item.offsetX = x - canvas.width / 2; item.offsetY = y - canvas.height / 2; return; }
+  if (id === 'base') {
+    const current = getBaseLayerRect(item);
+    item.offsetX = (item.offsetX || 0) + x - current.x;
+    item.offsetY = (item.offsetY || 0) + y - current.y;
+    return;
+  }
   const layer = (item.layers || []).find((entry) => entry.id === id);
   if (layer) { layer.x = x; layer.y = y; }
 }
@@ -879,13 +828,16 @@ function scaleSelectedLayerEntities(factor) {
   const item = files[activeIndex]; if (!item || !selectedLayerIds.size) return;
   const bounds = selectedLayerBounds(item); if (!bounds) return;
   getSelectedLayerEntities(item).forEach((entity) => {
+    if (isCloseViewImage(entity.data)) factor = Math.max(factor, 100 / Math.max(100, entity.data.scale ?? 100));
+  });
+  getSelectedLayerEntities(item).forEach((entity) => {
     const rect = getLayerEntityRect(item, entity.id);
     setLayerEntityCenter(item, entity.id, bounds.x + (rect.x - bounds.x) * factor, bounds.y + (rect.y - bounds.y) * factor);
     if (entity.type === 'base') {
-      item.scale = Math.max(10, Math.min(300, (item.scale ?? 100) * factor));
+      item.scale = Math.max(minimumLayerScale(item), Math.min(300, Math.max(minimumLayerScale(item), item.scale ?? 100) * factor));
       setImageScaleInputs(item.scale);
     } else {
-      entity.data.scale = Math.max(10, Math.min(500, (entity.data.scale ?? 100) * factor));
+      entity.data.scale = Math.max(minimumLayerScale(entity.data), Math.min(500, Math.max(minimumLayerScale(entity.data), entity.data.scale ?? 100) * factor));
     }
   });
 }
@@ -897,7 +849,7 @@ function duplicateSelectedLayers() {
       return source ? {...source, id: createLayerId(), name: `${source.name} copy`.slice(0, 60), x: (source.x ?? canvas.width / 2) + 35, y: (source.y ?? canvas.height / 2) + 35} : null;
     }
     const rect = getBaseLayerRect(item);
-    const copy = {id: createLayerId(), file: item.file, name: `${item.displayName || item.file.name} copy`.slice(0, 60), url: item.url, image: item.image, x: rect.x + 35, y: rect.y + 35, scale: 100, fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: Boolean(item.removeBg), processed: null, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
+    const copy = {id: createLayerId(), file: item.file, name: `${item.displayName || item.file.name} copy`.slice(0, 60), url: item.url, image: item.image, closeView: isCloseViewImage(item), x: rect.x + 35, y: rect.y + 35, scale: 100, fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: Boolean(item.removeBg), processed: null, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
     const copyRect = getAddedLayerRect(copy);
     const matchingFactor = copyRect.width && copyRect.height ? Math.min(rect.width / copyRect.width, rect.height / copyRect.height) : 1;
     copy.scale = Math.max(10, Math.min(500, matchingFactor * 100));
@@ -915,7 +867,7 @@ function layerCopyDescriptor(item, id) {
     return source ? {...source, id: null, url: null, image: null, processed: null} : null;
   }
   const rect = getBaseLayerRect(item);
-  const descriptor = {id: null, file: item.file, name: item.displayName || item.file.name, url: null, image: item.image, x: rect.x, y: rect.y, scale: 100, fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: Boolean(item.removeBg), processed: null, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
+  const descriptor = {id: null, file: item.file, name: item.displayName || item.file.name, url: null, image: item.image, closeView: isCloseViewImage(item), x: rect.x, y: rect.y, scale: 100, fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: Boolean(item.removeBg), processed: null, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
   const descriptorRect = getAddedLayerRect(descriptor);
   const matchingFactor = descriptorRect.width && descriptorRect.height ? Math.min(rect.width / descriptorRect.width, rect.height / descriptorRect.height) : 1;
   descriptor.scale = Math.max(10, Math.min(500, matchingFactor * 100));
@@ -994,8 +946,8 @@ function arrangeSelectedLayers() {
   if (contentWidth > availableWidth) {
     const factor = availableWidth / contentWidth;
     entities.forEach((entity) => {
-      if (entity.type === 'base') item.scale = Math.max(10, (item.scale ?? 100) * factor);
-      else entity.data.scale = Math.max(10, (entity.data.scale ?? 100) * factor);
+      if (entity.type === 'base') item.scale = Math.max(minimumLayerScale(item), (item.scale ?? 100) * factor);
+      else entity.data.scale = Math.max(minimumLayerScale(entity.data), (entity.data.scale ?? 100) * factor);
     });
     setImageScaleInputs(item.scale);
     rects = entities.map((entity) => ({entity, rect: getLayerEntityRect(item, entity.id)}));
@@ -1063,7 +1015,8 @@ fitSelect.addEventListener('change', () => {
 imageScale.addEventListener('pointerdown', () => { if (selectedLayerIds.size) saveHistory(); });
 function applyImageScale(value) {
   const item = files[activeIndex], selected = item ? getSelectedLayerEntities(item) : []; if (!selected.length) return;
-  const nextScale = setImageScaleInputs(value); selected.forEach((entity) => { entity.data.scale = nextScale; }); drawActive();
+  const minimum = Math.max(...selected.map((entity) => minimumLayerScale(entity.data)));
+  const nextScale = setImageScaleInputs(Math.max(minimum, Number(value) || 100)); selected.forEach((entity) => { entity.data.scale = nextScale; }); drawActive();
 }
 imageScale.addEventListener('input', () => applyImageScale(imageScale.value));
 imageScaleValue.addEventListener('focus', () => { if (selectedLayerIds.size) saveHistory(); });
@@ -1267,9 +1220,9 @@ canvasWrap.addEventListener('wheel', (event) => {
     const step = event.shiftKey ? .05 : .01;
     scaleSelectedLayerEntities(event.deltaY < 0 ? 1 + step : 1 - step);
   } else {
-    const current = files[activeIndex].scale ?? 100;
+    const current = Math.max(minimumLayerScale(files[activeIndex]), files[activeIndex].scale ?? 100);
     const step = event.shiftKey ? 5 : 1;
-    files[activeIndex].scale = Math.max(10, Math.min(300, current + (event.deltaY < 0 ? step : -step)));
+    files[activeIndex].scale = Math.max(minimumLayerScale(files[activeIndex]), Math.min(300, current + (event.deltaY < 0 ? step : -step)));
     setImageScaleInputs(files[activeIndex].scale);
   }
   syncSelectedLayerControls(); drawActive();
@@ -1286,10 +1239,12 @@ removeBgButton.addEventListener('click', () => {
 function toggleSelectedLayerBackgrounds() {
   const item = files[activeIndex], selected = item ? getSelectedLayerEntities(item) : [];
   if (!selected.length) { setStatus('Select one or more layers first.'); return false; }
-  const nextValue = !selected.every((entity) => entity.data.removeBg);
+  const eligible = selected.filter((entity) => !isCloseViewImage(entity.data));
+  if (!eligible.length) { setStatus('Close View images keep their original background.'); return false; }
+  const nextValue = !eligible.every((entity) => entity.data.removeBg);
   saveHistory();
-  selected.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.processed = null; if (entity.type === 'base') entity.data.smartPrep = null; });
-  syncSelectedLayerControls(); drawActive(); setStatus(nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.');
+  eligible.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.processed = null; if (entity.type === 'base') entity.data.smartPrep = null; });
+  syncSelectedLayerControls(); drawActive(); setStatus((nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.') + (eligible.length < selected.length ? ' Close View images were skipped.' : ''));
   return true;
 }
 function isLayerShortcutTypingTarget(target) {
@@ -1321,11 +1276,14 @@ document.addEventListener('keydown', (event) => {
 }, true);
 removeAllBgButton.addEventListener('click', () => {
   if (!files.length) return;
+  let count = 0, skipped = 0;
   files.forEach((item) => {
-    item.removeBg = true; item.processed = null; item.smartPrep = null;
-    (item.layers || []).forEach((layer) => { layer.removeBg = true; layer.processed = null; });
+    [item, ...(item.layers || [])].forEach((layer) => {
+      if (isCloseViewImage(layer)) { skipped += 1; return; }
+      layer.removeBg = true; layer.processed = null; layer.smartPrep = null; count += 1;
+    });
   });
-  syncSelectedLayerControls(); drawActive(); setStatus(`Background removal enabled for every layer in all ${files.length} images.`);
+  syncSelectedLayerControls(); drawActive(); setStatus(`Background removal enabled for ${count} layer${count === 1 ? '' : 's'}.${skipped ? ' Close View images were skipped.' : ''}`);
 });
 // Store named watermark template collections in IndexedDB.
 const watermarkDB = new Promise((resolve, reject) => {
@@ -1504,7 +1462,7 @@ function normalizedWatermarkSafeArea(value, image) {
     bottomMargin = Math.max(0, canvasHeight - topMargin - minimumMiddle);
   }
   const source = ['custom', 'template', 'analyzed'].includes(value?.source) ? value.source : 'automatic';
-  return {canvasWidth, canvasHeight, topMargin, bottomMargin, middleHeight: canvasHeight - topMargin - bottomMargin, source, ...(value?.clearance === 0 ? {clearance: 0} : {})};
+  return {canvasWidth, canvasHeight, topMargin, bottomMargin, middleHeight: canvasHeight - topMargin - bottomMargin, source};
 }
 function defaultWatermarkSafeArea(sectionIndex, template) {
   if (!template.builtIn) return null;
@@ -1515,7 +1473,7 @@ function defaultWatermarkSafeArea(sectionIndex, template) {
   return normalizedWatermarkSafeArea({
     canvasWidth: defaults.canvasWidth, canvasHeight: defaults.canvasHeight,
     topMargin: account.templates?.[name] ?? account.top, bottomMargin: account.bottom,
-    source: 'template', clearance: 0
+    source: 'template'
   });
 }
 function analyzeWatermarkSafeArea(image) {
@@ -1866,6 +1824,16 @@ async function applyListingWatermarks() {
     const safeArea = useSmartPreparation ? await getWatermarkSafeArea(plan.sectionIndex, template, image) : null;
     templateAssets.set(key, {image, safeArea});
   }));
+  if (useSmartPreparation) {
+    const outputWidth = Math.max(360, Number(resizeWidth.value) || canvas.width);
+    const outputHeight = Math.max(360, Number(resizeHeight.value) || canvas.height);
+    for (const row of plan.rows) {
+      if (row.detection.closeView) continue;
+      const {safeArea} = templateAssets.get(listingTemplateKey(plan.sectionIndex, row.template));
+      const safeRect = smartSafeRect({safeArea}, outputWidth, outputHeight);
+      if (!safeRect.width || !safeRect.height) throw new Error(`${row.template.name}: the template margins leave no room for a 50px gap. Increase the output size or adjust the template margins.`);
+    }
+  }
   let fallbackCount = 0, preparedCount = 0, closeViewCount = 0;
   for (let index = 0; index < plan.rows.length; index += 1) {
     const row = plan.rows[index], key = listingTemplateKey(plan.sectionIndex, row.template), asset = templateAssets.get(key);
