@@ -12,6 +12,7 @@ const path = require('node:path');
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
+    await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
     const results = await page.evaluate(async () => {
       const checks = []; window.preparationChecks = checks;
@@ -145,6 +146,7 @@ const path = require('node:path');
       const actualContext = actual.getContext('2d'); actualContext.drawImage(bitmap, 0, 0); bitmap.close();
       const expected = document.createElement('canvas'); expected.width = expected.height = 1576;
       const expectedContext = expected.getContext('2d'); expectedContext.fillStyle = '#fff'; expectedContext.fillRect(0, 0, 1576, 1576);
+      expectedContext.imageSmoothingQuality = 'high'; // Match the renderer's watermark resampling; the Close View remains native.
       expectedContext.drawImage(close.image, 588, 638); expectedContext.drawImage(close.watermarkImage, 0, 0, 1576, 1576);
       const actualPixels = actualContext.getImageData(0, 0, 1576, 1576).data, expectedPixels = expectedContext.getImageData(0, 0, 1576, 1576).data;
       assert('Close View PNG is pixel-identical to the original centered image plus template, even with stale removal/scale state', actualPixels.every((value, index) => value === expectedPixels[index]) && removals === countBeforeExport);

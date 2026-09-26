@@ -158,11 +158,12 @@ resizeWidth.value = '1576';
 resizeHeight.value = '1576';
 fitSelect.value = 'contain';
 imageScale.max = 300;
+imageScale.step = imageScaleValue.step = '.01';
 function setImageScaleInputs(value) {
   const minimum = Number(imageScale.min) || 10;
   const maximum = Number(imageScale.max) || 300;
   const parsed = Number(value);
-  const normalized = Math.max(minimum, Math.min(maximum, Number.isFinite(parsed) ? Math.round(parsed) : 100));
+  const normalized = Math.max(minimum, Math.min(maximum, Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 100));
   imageScale.value = String(normalized);
   imageScaleValue.value = String(normalized);
   return normalized;
@@ -446,6 +447,8 @@ function selectImage(index, {preserveBatchSelection = false} = {}) {
   empty.hidden = true; canvas.hidden = false; watermark.hidden = false; drawActive();
 }
 function drawBackground() {
+  // Canvas resizing resets context options; restore smooth resampling every render.
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const item = files[activeIndex];
   const needsWhiteExport = exporting && (exportFormat.value === 'jpg' || (exportFormat.value === 'webp' && item?.removeBg));
@@ -457,8 +460,34 @@ function drawBackground() {
 function createBackgroundRemovedSource(source) {
   const sourceWidth = source.naturalWidth || source.width, sourceHeight = source.naturalHeight || source.height;
   const work = document.createElement('canvas'); work.width = sourceWidth; work.height = sourceHeight; const workCtx = work.getContext('2d'); workCtx.drawImage(source, 0, 0); const pixels = workCtx.getImageData(0, 0, work.width, work.height); const sample = [pixels.data[0], pixels.data[1], pixels.data[2]];
-  for (let i = 0; i < pixels.data.length; i += 4) { const distance = Math.abs(pixels.data[i] - sample[0]) + Math.abs(pixels.data[i + 1] - sample[1]) + Math.abs(pixels.data[i + 2] - sample[2]); if (distance < 95) pixels.data[i + 3] = 0; else if (distance < 150) pixels.data[i + 3] = Math.round(((distance - 95) / 55) * pixels.data[i + 3]); }
+  // Transparent corners are not a black background to key out of a dark product.
+  const transparentCorners = [0, sourceWidth - 1, (sourceHeight - 1) * sourceWidth, sourceWidth * sourceHeight - 1].every(index => pixels.data[index * 4 + 3] < 12);
+  if (!transparentCorners) {
+    for (let i = 0; i < pixels.data.length; i += 4) { const distance = Math.abs(pixels.data[i] - sample[0]) + Math.abs(pixels.data[i + 1] - sample[1]) + Math.abs(pixels.data[i + 2] - sample[2]); if (distance < 95) pixels.data[i + 3] = 0; else if (distance < 150) pixels.data[i + 3] = Math.round(((distance - 95) / 55) * pixels.data[i + 3]); }
+  }
+  refineCutoutEdges(pixels);
   workCtx.putImageData(pixels, 0, 0); return work;
+}
+function refineCutoutEdges(pixels) {
+  const {width, height, data} = pixels, inset = new Uint8Array(width * height);
+  // Remove one source-pixel ring. Keep the canvas and placement bounds unchanged.
+  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+    const index = y * width + x;
+    let alpha = data[index * 4 + 3];
+    if (!alpha) continue;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) alpha = Math.min(alpha, data[(index + dy * width + dx) * 4 + 3]);
+    inset[index] = alpha;
+  }
+  // Feather inward only: smoothing must never recreate the removed outer halo.
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const index = y * width + x, offset = index * 4;
+    if (!inset[index]) { data[offset + 3] = 0; continue; }
+    let sum = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      sum += inset[index + dy * width + dx] * (dx === 0 ? 2 : 1) * (dy === 0 ? 2 : 1);
+    }
+    data[offset + 3] = Math.min(inset[index], Math.round(sum / 16));
+  }
 }
 function isCloseViewImage(item) {
   if (!item) return false;
@@ -580,7 +609,7 @@ function createSmartPreparation(source, safeArea, templateKey = '') {
   }
   const coverage = foregroundCount / Math.max(1, opaqueCount);
   const reliable = foregroundCount > 0 && coverage >= .01 && coverage <= .94 && right >= left && bottom >= top;
-  const foreground = document.createElement('canvas'); foreground.width = width; foreground.height = height;
+  let foreground = document.createElement('canvas'); foreground.width = width; foreground.height = height;
   const foregroundContext = foreground.getContext('2d');
   const foregroundPixels = foregroundContext.createImageData(width, height);
   const reconstructed = document.createElement('canvas'); reconstructed.width = width; reconstructed.height = height;
@@ -593,7 +622,7 @@ function createSmartPreparation(source, safeArea, templateKey = '') {
       const expected = interpolatedBackgroundColor(corners, width > 1 ? x / (width - 1) : 0, yRatio);
       const isForeground = reliable ? !backgroundMask[index] && original.data[offset + 3] >= 12 : true;
       if (isForeground) {
-        foregroundPixels.data[offset] = original.data[offset]; foregroundPixels.data[offset + 1] = original.data[offset + 1]; foregroundPixels.data[offset + 2] = original.data[offset + 2]; foregroundPixels.data[offset + 3] = original.data[offset + 3];
+        foregroundPixels.data[offset] = original.data[offset]; foregroundPixels.data[offset + 1] = original.data[offset + 1]; foregroundPixels.data[offset + 2] = original.data[offset + 2]; foregroundPixels.data[offset + 3] = analysisScale < 1 ? 255 : original.data[offset + 3];
       }
       const preserveOriginal = reliable && !isForeground;
       reconstructedPixels.data[offset] = preserveOriginal ? original.data[offset] : Math.round(expected[0]);
@@ -602,23 +631,37 @@ function createSmartPreparation(source, safeArea, templateKey = '') {
       reconstructedPixels.data[offset + 3] = preserveOriginal ? original.data[offset + 3] : Math.round(Math.max(expected[3], 255));
     }
   }
-  if (reliable) {
-    for (let y = Math.max(1, top); y <= Math.min(height - 2, bottom); y += 1) {
-      for (let x = Math.max(1, left); x <= Math.min(width - 2, right); x += 1) {
-        const index = y * width + x;
-        if (backgroundMask[index]) continue;
-        const touchesBackground = backgroundMask[index - 1] || backgroundMask[index + 1] || backgroundMask[index - width] || backgroundMask[index + width];
-        if (touchesBackground) foregroundPixels.data[index * 4 + 3] = Math.min(foregroundPixels.data[index * 4 + 3], 205);
-      }
-    }
-  } else { left = 0; top = 0; right = width - 1; bottom = height - 1; }
+  if (!reliable) { left = 0; top = 0; right = width - 1; bottom = height - 1; }
+  if (reliable && analysisScale === 1) refineCutoutEdges(foregroundPixels);
   foregroundContext.putImageData(foregroundPixels, 0, 0);
+  if (analysisScale < 1) {
+    // Analyze a smaller image, but retain original-resolution product pixels.
+    // Only the mask is enlarged; edge cleanup is always one native source pixel.
+    const fullSize = document.createElement('canvas'); fullSize.width = sourceSize.width; fullSize.height = sourceSize.height;
+    const fullContext = fullSize.getContext('2d');
+    if (reliable) {
+      fullContext.imageSmoothingEnabled = true; fullContext.imageSmoothingQuality = 'high';
+      fullContext.drawImage(foreground, 0, 0, fullSize.width, fullSize.height);
+      // Recover the contour before trimming: resampling can introduce a faint
+      // outside mask edge. Source transparency is applied separately, once.
+      const maskPixels = fullContext.getImageData(0, 0, fullSize.width, fullSize.height);
+      for (let offset = 3; offset < maskPixels.data.length; offset += 4) maskPixels.data[offset] = maskPixels.data[offset] >= 128 ? 255 : 0;
+      fullContext.putImageData(maskPixels, 0, 0);
+      fullContext.globalCompositeOperation = 'source-in'; fullContext.drawImage(source, 0, 0);
+      fullContext.globalCompositeOperation = 'source-over';
+      const fullPixels = fullContext.getImageData(0, 0, fullSize.width, fullSize.height);
+      refineCutoutEdges(fullPixels); fullContext.putImageData(fullPixels, 0, 0);
+    } else fullContext.drawImage(source, 0, 0);
+    foreground = fullSize;
+  }
   reconstructedContext.putImageData(reconstructedPixels, 0, 0);
+  const sourceScaleX = sourceSize.width / width, sourceScaleY = sourceSize.height / height;
+  const boundsLeft = Math.floor(left * sourceScaleX), boundsTop = Math.floor(top * sourceScaleY);
   const preparation = {
     enabled: true,
     foreground,
     background: reconstructed,
-    bounds: {x: left, y: top, width: Math.max(1, right - left + 1), height: Math.max(1, bottom - top + 1)},
+    bounds: {x: boundsLeft, y: boundsTop, width: Math.max(1, Math.ceil((right + 1) * sourceScaleX) - boundsLeft), height: Math.max(1, Math.ceil((bottom + 1) * sourceScaleY) - boundsTop)},
     safeArea: {...safeArea},
     templateKey,
     coverage,
@@ -852,7 +895,8 @@ function getAddedLayerDrawRect(layer) {
     const scale = Math.max(1, (layer.scale ?? 100) / 100);
     return {x: layer.x ?? canvas.width / 2, y: layer.y ?? canvas.height / 2, width: sourceWidth * scale, height: sourceHeight * scale};
   }
-  const fitWidth = (canvas.width * .32) / sourceWidth, fitHeight = (canvas.height * .32) / sourceHeight;
+  // A newly added layer at 100% uses the full canvas fit, just like the original.
+  const fitWidth = canvas.width / sourceWidth, fitHeight = canvas.height / sourceHeight;
   const baseScale = layer.fit === 'cover' ? Math.max(fitWidth, fitHeight) : Math.min(fitWidth, fitHeight);
   const scale = baseScale * (layer.sizeMultiplier ?? 1) * (layer.scale ?? 100) / 100;
   return {x: layer.x ?? canvas.width / 2, y: layer.y ?? canvas.height / 2, width: sourceWidth * scale, height: sourceHeight * scale};
@@ -907,6 +951,7 @@ function syncSelectedLayerControls() {
   const primary = selected[0];
   const minimumScale = selected.some((entity) => isCloseViewImage(entity.data)) ? 100 : 10;
   imageScale.min = minimumScale; imageScaleValue.min = minimumScale;
+  imageScale.max = imageScaleValue.max = selected.length && selected.every(entity => entity.type === 'added') ? 500 : 300;
   if (primary) {
     setImageScaleInputs(primary.data.scale ?? 100);
     fitSelect.value = primary.data.fit || 'contain';

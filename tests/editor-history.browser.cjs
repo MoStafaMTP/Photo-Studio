@@ -9,6 +9,7 @@ const path = require('node:path');
   const page = await browser.newPage(); const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
+    await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
     const checks = await page.evaluate(async () => {
       await historyReady;

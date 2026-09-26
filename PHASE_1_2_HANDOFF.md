@@ -34,6 +34,8 @@ Image exports keep the uploaded filename stem with the selected JPG/PNG/WebP ext
 
 **Layer duplication:** a base-layer duplicate uses the original's unrotated draw dimensions and keeps its scale percentage, with an independent size multiplier instead of clamping the fitted size to 500%. For prepared products it copies the cropped foreground pixels into an immutable source snapshot; duplicate, clipboard, batch, and generated-output copies retain that snapshot. Toggling a prepared duplicate's background restores the original source or the saved cutout. Rotation, flips, shadows, and the existing 35px duplicate offset are preserved.
 
+**Layer import scale:** uploaded and dropped layers now start at 100% of the full proportional canvas fit. The old implicit 0.32 fit multiplier is removed. A square source therefore fills a square canvas at 100%; non-square sources preserve their proportions. Size controls show two decimal places when needed and use the added-layer 500% maximum instead of displaying a clamped 300%. Copies retain their existing percentage and exact geometry through the separate duplicate size multiplier. Close View layers continue to use native pixel dimensions at 100%.
+
 **Composition preservation:** Listing labels images containing added layers (including those whose original layer was deleted) as **Keep layout**. Apply Workflow replaces their watermark without resetting transforms, clearing preparation/background edits, or re-fitting only the original layer. A prepared original's current unrotated size and center are retained independently of the template's automatic fit, so Normal header analysis cannot move it when accounts change. Manual Saved Watermark changes use the same preservation rule. Generated unmain compositions inherit the arrangement with independent layer IDs and loaded assets. Existing single-original-layer preparation and Close View rules remain in place; manual compositions are not automatically rearranged to enforce a new template's margins.
 
 The **Smart image preparation** checkbox is enabled by default in Listing. Turning it off only assigns the matched watermarks, while Close View images still restore their original size and background.
@@ -88,15 +90,17 @@ Safe-area overrides are stored in IndexedDB database `photo-studio-assets`, obje
 
 The engine runs entirely in the browser and requires no server or external API.
 
-- Product images are analyzed at up to 1600 pixels on their longest side.
+- Product images are analyzed at up to 1600 pixels on their longest side, while the foreground canvas retains original-resolution product pixels. For larger sources, only the detection mask is enlarged, its faint interpolation fringe is removed, and the original source transparency is applied once.
 - Four corner regions form a background color model.
 - The engine adapts its tolerance to the color variation found along the source edges.
 - Only matching pixels connected to an image edge are classified as background. This prevents enclosed product areas with a similar color from being erased.
 - Original transparency is respected.
-- The resulting product is stored as a transparent in-memory canvas with a tight visible bounding box.
+- The resulting product is stored as a transparent in-memory canvas with placement bounds mapped to source pixel coordinates. A shared cleanup pass erodes the alpha mask by one source pixel and applies a 3 × 3 weighted inward feather; it cannot spread opacity back into the removed ring. This also applies to manual Remove BG. The canvas dimensions and pre-trim placement bounds stay unchanged, preserving fitted size and center.
 - If a dependable foreground cannot be found, the engine keeps the full image as a non-destructive fallback and marks the Listing row **Review fit**.
 
 The local separator is designed for the clean or gently graded product backgrounds normally used for marketplace photography. Complex scenes, background objects touching the product, or nearly identical product/background colors can use the safe full-image fallback rather than producing a destructive cutout.
+
+Manual removal recognizes transparent corners instead of treating them as a black color key, preserving dark products on transparent PNGs. Preview and export re-enable high-quality image resampling after every canvas resize. Close View sources bypass removal and edge cleanup entirely.
 
 ## Background reconstruction
 
@@ -158,6 +162,8 @@ History covers layer and batch uploads, duplication and deletion, stacking, size
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+`tests/cutout-scale.browser.cjs` passes 31 checks covering manual/workflow fringe removal on all four edges, inward antialiasing and unchanged interior pixels, transparent dark products, original-resolution texture and mask edges on large images, non-destructive fallback, actual Layers file-drop events, percentage sizing including fractional and >300% values, Undo/Redo, duplicates, Close Views, stable workflow placement and transparent PNG export. Optional Google Fonts requests are blocked in browser tests to keep checks independent of network availability.
 
 `tests/editor-history.browser.cjs` covers granular and whole-batch history, restoring uploads and deletions with usable image assets, more than 50 movement steps, cross-image Undo/Redo, layers, compound workflow/reset actions, saved-library persistence, explicit metadata actions, real mouse movement and history buttons, numeric keyboard shortcuts, and background-toggle geometry/export pixels.
 

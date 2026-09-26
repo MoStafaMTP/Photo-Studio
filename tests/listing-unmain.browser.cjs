@@ -13,6 +13,7 @@ const assert = require('node:assert/strict');
   const errors = [], results = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
+    await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
     results.push(...await page.evaluate(async () => {
       const checks = []; window.unmainChecks = checks;
