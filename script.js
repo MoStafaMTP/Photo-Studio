@@ -479,13 +479,24 @@ function refineCutoutEdges(pixels) {
     for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++) if (!data[(yy * width + xx) * 4 + 3]) alpha = 0;
     inset[index] = alpha;
   }
-  // A one/two-pixel strap, stitch or tip has no eroded core. Preserve it instead
-  // of shrinking it to nothing, and keep its connection to the thicker product.
+  // A narrow strap, stitch or tip must survive both trimming and feathering.
+  // Require a two-pixel-deep core before smoothing a feature: protecting only
+  // the one-pixel erosion would let the wider filter erase 3–4px details.
+  const detailCore = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const index = y * width + x;
-    if (!data[index * 4 + 3] || inset[index]) continue;
+    if (!inset[index]) continue;
+    let solid = true;
+    for (let yy = Math.max(0, y - 1); solid && yy <= Math.min(height - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++) {
+      if (!inset[yy * width + xx]) { solid = false; break; }
+    }
+    if (solid) detailCore[index] = 1;
+  }
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const index = y * width + x;
+    if (!data[index * 4 + 3] || detailCore[index]) continue;
     let hasCore = false;
-    for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++) if (inset[yy * width + xx]) hasCore = true;
+    for (let yy = Math.max(0, y - 2); !hasCore && yy <= Math.min(height - 1, y + 2); yy++) for (let xx = Math.max(0, x - 2); xx <= Math.min(width - 1, x + 2); xx++) if (detailCore[yy * width + xx]) { hasCore = true; break; }
     if (!hasCore) protectedDetail[index] = 1;
   }
   const edgeAlpha = inset.slice();
@@ -496,18 +507,27 @@ function refineCutoutEdges(pixels) {
       if (protectedDetail[yy * width + xx]) edgeAlpha[index] = data[index * 4 + 3];
     }
   }
-  // Feather inward only: smoothing must never recreate the removed outer halo.
+  // Smooth silhouette coverage, not source alpha or RGB. A wider, separable
+  // 5-tap filter softens diagonal steps without blurring texture or spreading
+  // translucency inside the product. Out-of-canvas samples repeat the edge.
+  const weights = [1, 4, 6, 4, 1], horizontal = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    let coverage = 0;
+    for (let dx = -2; dx <= 2; dx++) {
+      if (edgeAlpha[y * width + Math.max(0, Math.min(width - 1, x + dx))]) coverage += weights[dx + 2];
+    }
+    horizontal[y * width + x] = coverage;
+  }
+  // Keep the one-pixel fringe removed. Remap coverage to an inward-only ramp:
+  // a straight opaque edge now fades through ~96/223/255 rather than 191/255.
+  // Thin features protected above retain their source opacity and connections.
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const index = y * width + x, offset = index * 4;
-    if (edgeAlpha[index] > inset[index]) continue;
+    if (protectedDetail[index] || edgeAlpha[index] > inset[index]) continue;
     if (!edgeAlpha[index]) { data[offset + 3] = 0; continue; }
-    let sum = 0, touchesBackground = false;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      const neighbor = Math.max(0, Math.min(height - 1, y + dy)) * width + Math.max(0, Math.min(width - 1, x + dx));
-      sum += edgeAlpha[neighbor] * (dx === 0 ? 2 : 1) * (dy === 0 ? 2 : 1);
-      if (!edgeAlpha[neighbor]) touchesBackground = true;
-    }
-    if (touchesBackground) data[offset + 3] = Math.min(edgeAlpha[index], Math.round(sum / 16));
+    let coverage = 0;
+    for (let dy = -2; dy <= 2; dy++) coverage += horizontal[Math.max(0, Math.min(height - 1, y + dy)) * width + x] * weights[dy + 2];
+    data[offset + 3] = Math.round(edgeAlpha[index] * Math.max(0, coverage - 128) / 128);
   }
 }
 function isCloseViewImage(item) {

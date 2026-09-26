@@ -36,7 +36,7 @@ Detailed handoffs are available in:
 - Per-layer shadows with opacity, angle, and distance controls.
 - Manual background removal for selected layers or the complete batch; Close View sources are skipped, including by Ctrl+B.
 - Remove BG follows background-colored areas connected to the image border, preserving matching colors inside the product. Conservative color/edge limits, corner-outlier rejection and an unchanged-image fallback reduce accidental subject removal; existing transparent backgrounds are respected.
-- Manual and workflow cutouts trim one source pixel from broad silhouette edges and soften inward, while retaining thin details and their connections. Cleanup does not trim against the outside of the canvas or spread internal translucency. Workflow product pixels retain the original image resolution, and preview/export use high-quality resampling.
+- Manual and workflow cutouts trim one source pixel from broad silhouette edges, then use a wider, gradual inward opacity transition to smooth curves and diagonals. One-to-four-pixel details and their connections are protected. Smoothing affects the silhouette without blurring product texture, spreading internal translucency or adding an outer halo. Workflow product pixels retain the original image resolution, and preview/export use high-quality resampling.
 - Remove BG after Apply Workflow keeps the fitted product's size, center, rotation and placement. Prepared duplicates also keep their crop when backgrounds are toggled.
 - Session-wide Undo/Redo records each small movement, wheel/input adjustment, shadow, background, watermark, layer and canvas edit. Uploads, batch duplication/deletion, reset and Apply Workflow are reversible, including generated unmain images. There is no fixed 50-step limit. Use Ctrl+Z, Ctrl+Y, or Ctrl+Shift+Z.
 
@@ -147,6 +147,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. They are exempt from safe-area fitting and the 50px inset so that their original size and background are preserved. A source larger than the output canvas can extend beyond its edges; increase the output dimensions when needed. Manual enlargement is available, but shrinking below 100% and background removal are blocked for Close View sources and their layer/batch copies.
 
 ## Validation
+
+`tests/cutout-smoothing.browser.cjs` passes 22 checks for gradual opacity transitions, curved and slanted contours, one-to-four-pixel detail preservation, unchanged interior texture/translucency, native-resolution workflow cleanup, fixed image placement, repeated removal, Undo/Redo, and PNG/JPG/WebP export. A generated visual sheet was inspected over light and dark backgrounds at native and magnified sizes. Set `CUTOUT_PREVIEW` to an output PNG path to save the sheet. These fixtures verify smoothing behavior; no user-supplied failing photo was available.
 
 `tests/listing-dsa.browser.cjs` passes 28 checks covering the DSA material-free workflow, template matching, account switching, Undo/Redo, Close Views, CPIS metadata, keyboard focus and skipped DT/DB unmain generation. Actual downloads verify a flat DSA ZIP, filename collision handling, repeat export, independence from the browsed account and folder-based mixed-account export. Other accounts retain material-specific matching and DT/DB unmain generation.
 

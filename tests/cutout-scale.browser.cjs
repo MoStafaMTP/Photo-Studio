@@ -28,7 +28,7 @@ const path = require('node:path');
       const prepared = createSmartPreparation(source, area);
       for (const [name, cutout] of [['Manual', createBackgroundRemovedSource(source)], ['Workflow', prepared.foreground]]) {
         check(`${name}: all four one-pixel fringe edges are fully transparent`, [[16, 48], [79, 48], [48, 16], [48, 79]].every(([x, y]) => pixel(cutout, x, y)[3] === 0));
-        check(`${name}: a soft inner transition replaces the hard edge`, pixel(cutout, 17, 48)[3] > 0 && pixel(cutout, 17, 48)[3] < 255 && pixel(cutout, 18, 48)[3] === 255);
+        check(`${name}: a gradual inner transition replaces the hard edge`, pixel(cutout, 17, 48)[3] > 0 && pixel(cutout, 17, 48)[3] < pixel(cutout, 18, 48)[3] && pixel(cutout, 18, 48)[3] < 255 && pixel(cutout, 19, 48)[3] === 255);
         check(`${name}: interior color and canvas dimensions are unchanged`, pixel(cutout, 48, 48).join() === '160,0,0,255' && cutout.width === 96 && cutout.height === 96);
         check(`${name}: feathering cannot spread back into the removed background`, pixel(cutout, 15, 48)[3] === 0 && pixel(cutout, 0, 0)[3] === 0);
       }
@@ -94,7 +94,7 @@ const path = require('node:path');
       item.smartPrep = null; item.removeBg = true; item.processed = null; item.scale = 100; item.originalSize = true;
       resizeWidth.value = resizeHeight.value = 360; backgroundMode = 'none'; exportFormat.value = 'png'; drawActive();
       const output = await createImageBitmap(await createExportBlob(item, 'png')), exported = makeCanvas(360, 360); exported.getContext('2d').drawImage(output, 0, 0); output.close();
-      check('PNG export retains the trimmed edge and smooth inner transition', pixel(exported, 148, 180)[3] === 0 && pixel(exported, 149, 180)[3] > 0 && pixel(exported, 149, 180)[3] < 255 && pixel(exported, 150, 180)[3] === 255);
+      check('PNG export retains the trimmed edge and gradual inner transition', pixel(exported, 148, 180)[3] === 0 && pixel(exported, 149, 180)[3] > 0 && pixel(exported, 149, 180)[3] < pixel(exported, 150, 180)[3] && pixel(exported, 150, 180)[3] < 255 && pixel(exported, 151, 180)[3] === 255);
       check('Preview and export enable high-quality image resampling', ctx.imageSmoothingEnabled && ctx.imageSmoothingQuality === 'high');
       return checks;
     });
