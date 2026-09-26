@@ -1,12 +1,14 @@
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const {pathToFileURL} = require('node:url');
 const path = require('node:path');
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
 
 (async () => {
   const browser = await chromium.launch({headless: true,
     ...(process.env.BROWSER_EXECUTABLE ? {executablePath: process.env.BROWSER_EXECUTABLE} : {}),
     args: ['--allow-file-access-from-files']});
-  const page = await browser.newPage(); const errors = [];
+  const page = await browser.newPage({acceptDownloads: true}); const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
     await page.route('https://fonts.googleapis.com/**', route => route.abort());
@@ -23,13 +25,13 @@ const path = require('node:path');
       const source = document.createElement('canvas'); source.width = source.height = 200;
       const c = source.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, 200, 200); c.fillStyle = '#900'; c.fillRect(60, 30, 80, 140);
       const blob = await new Promise(resolve => source.toBlob(resolve));
-      addImages(['DT.png', 'PB.png', 'details.png', 'DOPTcv.png'].map(name => new File([blob], name, {type: 'image/png'})));
+      addImages(['DT.png', 'DB.png', 'PB.png', 'details.png', 'DOPTcv.png'].map(name => new File([blob], name, {type: 'image/png'})));
       await Promise.all(files.map(item => item.image.decode()));
       await new Promise(resolve => setTimeout(resolve, 50));
       renderListingPreview(); const plan = createListingPlan();
       check('Upload automatically opens DSA Listing with no material question', !listingPanel.hidden && listingMaterialField.hidden && listingMaterial.value === '');
       check('DSA enables Apply Workflow with a blank material', plan.ready && !plan.requiresMaterial && !listingApplyButton.disabled);
-      check('Main, passenger, normal and generated unmain rows use the exact DSA template', plan.rows.length === 5 && plan.rows.every(row => row.template.id === defaultTemplate.id && !row.fallback));
+      check('DSA matches all image categories without planning DT/DB unmain copies', plan.rows.length === 5 && plan.rows.every(row => row.template.id === defaultTemplate.id && !row.fallback && !row.pendingGeneration));
       check('Local DSA integration plans do not invent a material', PhotoStudioIntegration.getPlan().material === null);
       listingTemplateManager.open = true; await renderListingTemplateManager();
       check('The template manager shows one DSA template without requiring material', listingTemplateManagerGrid.querySelectorAll('.listing-template-safe-card').length === 1 && listingTemplateManagerGrid.textContent.includes(defaultTemplate.name));
@@ -39,20 +41,24 @@ const path = require('node:path');
       }
       listingMaterial.value = ''; renderListingPreview();
       await applyListingWatermarks();
-      check('Apply Workflow assigns the DSA watermark to every output with material still blank', files.length === 5 && files.every(item => item.watermarkSection === dsa && item.watermarkTemplateId === defaultTemplate.id && item.watermarkEnabled) && listingMaterial.value === '');
+      check('Apply Workflow watermarks only the five DSA originals with material still blank', files.length === 5 && files.every(item => item.watermarkSection === dsa && item.watermarkTemplateId === defaultTemplate.id && item.watermarkEnabled && !item.generatedFromImageId) && listingMaterial.value === '');
+      await applyListingWatermarks();
+      check('Repeating DSA workflow still creates no unmain copies', files.length === 5 && !files.some(item => item.generatedFromImageId));
       const cv = files.find(item => item.file.name === 'DOPTcv.png');
       check('DSA retains Close View background and native-size protection', !cv.smartPrep && !cv.removeBg && cv.originalSize && cv.scale === 100);
       choose(listingAccount, '6');
       check('Switching away from DSA restores material selection and blocks an incomplete workflow', !listingMaterialField.hidden && !listingMaterial.disabled && !createListingPlan().ready && listingApplyButton.disabled);
       choose(listingMaterial, 'perforated');
       check('Other accounts keep their material-specific template mapping', createListingPlan().ready && createListingPlan().rows.find(row => row.item.file.name === 'DT.png').template.name === 'PI');
+      check('Other accounts still plan DT and DB unmain copies', createListingPlan().rows.filter(row => row.pendingGeneration).map(row => row.item.displayName).join('|') === 'DT unmain.png|DB unmain.png');
       choose(listingAccount, String(dsa));
       check('Returning to DSA skips material without overwriting the saved choice', listingMaterialField.hidden && listingMaterial.value === 'perforated' && createListingPlan().ready);
       undo(); check('Undo of the account change restores the visible material control', listingAccount.value === '6' && !listingMaterialField.hidden && listingMaterial.value === 'perforated');
       redo(); check('Redo of the account change restores the DSA skip state', listingAccount.value === String(dsa) && listingMaterialField.hidden && createListingPlan().ready);
-      const payload = {account: 'DSA', material: 'Genuine Leather Solid', images: files.map(item => ({filename: item.file.name, imageId: item.id, variation: 'DT', subtype: 'unmain'}))};
+      const payload = {account: 'DSA', material: 'Genuine Leather Solid', images: files.map(item => ({filename: item.file.name, imageId: item.id, variation: item.file.name === 'DB.png' ? 'DB' : 'DT', subtype: 'main'}))};
       setCPISMetadata(payload);
       check('CPIS DSA imports keep their supplied material but do not show the material question', listingMaterialField.hidden && PhotoStudioIntegration.getMetadata().material === payload.material && createListingPlan().rows.every(row => row.template.id === defaultTemplate.id));
+      check('CPIS-resolved DT/DB main roles also skip unmain generation for DSA', createListingPlan().rows.length === files.length && !createListingPlan().rows.some(row => row.pendingGeneration));
       payload.images[0].templateName = 'not-installed';
       let rejected = false; try { setCPISMetadata(payload); } catch (error) { rejected = error.message.includes('not available'); }
       check('Explicit CPIS template validation still rejects missing artwork', rejected);
@@ -61,6 +67,39 @@ const path = require('node:path');
       check('Reopening DSA Listing focuses an available control rather than hidden material', document.activeElement === listingSmartPrep && listingMaterialField.hidden);
       return checks;
     });
+    await page.evaluate(async () => {
+      listingAutoPrompted = true;
+      const [duplicateName] = addImages([new File([files[0].file], 'DT.png', {type: 'image/png'})]); await duplicateName.image.decode();
+      resizeWidth.value = resizeHeight.value = 500; exportFormat.value = 'png'; await applyListingWatermarks(); closeListingPanel();
+    });
+    const readEntries = async download => {
+      const zip = fs.readFileSync(await download.path()), entries = []; let offset = 0;
+      while (zip.readUInt32LE(offset) === 0x04034b50) {
+        const size = zip.readUInt32LE(offset + 18), length = zip.readUInt16LE(offset + 26), extra = zip.readUInt16LE(offset + 28);
+        const start = offset + 30 + length + extra;
+        entries.push({name: zip.subarray(offset + 30, offset + 30 + length).toString(), data: zip.subarray(start, start + size)}); offset = start + size;
+      }
+      return entries;
+    };
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#export-all').click()]);
+    assert.equal(download.suggestedFilename(), 'DSA eBay.zip');
+    const entries = await readEntries(download);
+    assert.deepEqual(entries.map(entry => entry.name), ['DT.png', 'DB.png', 'PB.png', 'details.png', 'DOPTcv.png', 'DT (2).png']);
+    assert.ok(entries.every(entry => entry.data.subarray(1, 4).toString() === 'PNG'));
+    checks.push('Actual DSA Export Batch puts valid images directly in DSA eBay.zip with no folders or generated unmain files');
+    checks.push('Flat ZIP duplicate filenames are numbered without dropping images');
+    await page.waitForFunction(() => !exportAll.disabled);
+    await page.evaluate(() => { listingAccount.value = '6'; renderListingPreview(); });
+    const [again] = await Promise.all([page.waitForEvent('download'), page.locator('#export-all').click()]);
+    assert.equal(again.suggestedFilename(), 'DSA eBay.zip');
+    assert.deepEqual((await readEntries(again)).map(entry => entry.name), entries.map(entry => entry.name));
+    checks.push('Repeat export keeps the flat DSA layout even after browsing another account');
+    await page.waitForFunction(() => !exportAll.disabled);
+    await page.evaluate(async () => { selectImage(0); await selectWatermarkTemplate(6, findListingTemplate(6, 'Normal').template.id); });
+    const [mixed] = await Promise.all([page.waitForEvent('download'), page.locator('#export-all').click()]);
+    const mixedNames = (await readEntries(mixed)).map(entry => entry.name);
+    assert.ok(mixedNames.includes('Main/') && mixedNames.includes('unmain/') && mixedNames.includes('unmain/DT.png') && mixedNames.includes('Main/DT.png'));
+    checks.push('Mixed-account batches retain template-based Main/unmain folders');
     if (errors.length) throw Error(errors.join('; '));
     console.log(JSON.stringify({passed: checks.length, checks, errors}, null, 2));
   } catch (error) {

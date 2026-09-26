@@ -54,12 +54,12 @@ Detailed handoffs are available in:
 ### Listing workflow
 
 - Select an eBay account and product material.
-- DSA eBay skips material selection and uses its single `DSA Seat Factory - eBay` template for every image category. Switching to another account restores the material question and any previous choice.
+- DSA eBay skips material selection and uses its single `DSA Seat Factory - eBay` template for every image category, without creating DT/DB unmain copies. Switching to another account restores the material question and any previous choice.
 - Import resolved CPIS metadata through **Import CPIS JSON** or `window.PhotoStudioIntegration`; metadata takes priority over filenames.
 - Detect `DB`, `PB`, `DPB`, `DT`, `PT`, `DPT`, `DTB`, `PTB`, and `DPTB` filename codes. `Full Set` (also `Full_Set`, `Full-Set`, and `FullSet`) is an alias for `DPTB` and follows its material-specific Main template rules.
 - Support DOPT/DOPB as shared image types and `main`, `unmain`, `cv`, `io`, and `numbered` subtypes. Only primary `main` images use Main/Passenger templates; all other roles use Normal unless CPIS supplies an explicit template choice.
 - Select Main, Passenger Side, or Normal templates automatically.
-- Apply Workflow creates an additional editable Normal-template image for each DT/DB main source, named with ` unmain` before the extension (for example, `DB unmain.jpg`). Originals keep their templates. The review shows planned copies, and repeated runs reuse existing copies. PT and Full Set do not generate unmain copies.
+- For accounts other than DSA eBay, Apply Workflow creates an additional editable Normal-template image for each DT/DB main source, named with ` unmain` before the extension (for example, `DB unmain.jpg`). Originals keep their templates. The review shows planned copies, and repeated runs reuse existing copies. PT and Full Set do not generate unmain copies.
 - After Apply Workflow, all images assigned a Normal template appear below the other images. Order within each group, the active image, and multi-image selection are preserved.
 - Existing layered arrangements show **Keep layout** in Listing. Changing account/material or applying another watermark preserves layer positions, sizes, transforms, stacking order, and background edits. Automatic product fitting applies to single original layers; compositions keep their manual placement. Generated unmain copies inherit a source composition.
 - Review every image and resolved template before processing.
@@ -93,7 +93,7 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 - JPG, PNG, and WebP output.
 - Export the current image.
 - Keep uploaded image filenames without adding `Photo Studio`. The chosen format determines the extension. ZIP name collisions within each folder receive a number such as `DT (2).jpg` so every image remains available.
-- Export the complete batch as a browser-generated ZIP containing `Main/` and `unmain/`. Images assigned Normal templates go in `unmain/`; all other images go in `Main/`. This follows the current template, including manual changes, rather than the filename or subtype. Both folders are included even when one is empty.
+- A batch assigned entirely to DSA eBay exports images directly inside `DSA eBay.zip`, without subfolders. Other or mixed-account batches contain `Main/` and `unmain/`: Normal-template images go in `unmain/`, all others in `Main/`, with both folders present even when one is empty. Layout follows actual template assignments, not the account currently being browsed. Filename collisions are numbered in either layout.
 - Batch ZIP names match the applied template's account folder, such as `Elite.zip`, `DIY.zip`, or `US Auto Nation.zip`. Mixed accounts use their folder names joined with ` + `; batches without an assigned template keep `photo-studio-batch.zip`.
 - Export prepared eBay listing images with the header's current-image or Export Batch controls.
 
@@ -148,7 +148,7 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 
 ## Validation
 
-`tests/listing-dsa.browser.cjs` passes 21 checks for upload with DSA preselected, hidden material controls, ready/apply behavior with no material, all image categories sharing the DSA template, template-manager display, stored-material independence, account switching, Undo/Redo, Close Views, CPIS metadata and focus handling. Other accounts retain material-specific matching.
+`tests/listing-dsa.browser.cjs` passes 28 checks covering the DSA material-free workflow, template matching, account switching, Undo/Redo, Close Views, CPIS metadata, keyboard focus and skipped DT/DB unmain generation. Actual downloads verify a flat DSA ZIP, filename collision handling, repeat export, independence from the browsed account and folder-based mixed-account export. Other accounts retain material-specific matching and DT/DB unmain generation.
 
 `tests/subject-preservation.browser.cjs` passes 23 checks covering white/light-gray subject interiors, subtle product boundaries, subjects touching a corner, one/two-pixel details, translucent regions, graded backgrounds and uncertain-cutout fallback. It also checks the actual Remove BG action, repeated toggles, Undo/Redo, duplicates, added layers, Remove All BG, Close View protection and transparent PNG export. These use generated fixtures; no user-supplied failing photo was available for this change.
 

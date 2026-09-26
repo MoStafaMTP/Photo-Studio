@@ -1712,7 +1712,8 @@ function detectListingImageType(fileName) {
 function normalizeListingTemplateName(name) {
   return String(name || '').replace(/\.[^/.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
-function listingRequiresMaterial(sectionIndex) { return WATERMARK_SECTION_NAMES[sectionIndex] !== 'DSA eBay'; }
+function isDSAEbayAccount(sectionIndex) { return WATERMARK_SECTION_NAMES[sectionIndex] === 'DSA eBay'; }
+function listingRequiresMaterial(sectionIndex) { return !isDSAEbayAccount(sectionIndex); }
 function findListingTemplate(sectionIndex, requestedName, {allowAccountDefault = true} = {}) {
   const section = watermarkSections[sectionIndex];
   if (!section) return {template: null, fallback: false};
@@ -1919,7 +1920,7 @@ function createListingPlan() {
   const stemOf = (name) => name.replace(/\.[^/.]+$/, '').trim().toLowerCase();
   const usedNames = new Set(rows.map(row => stemOf(listingSourceName(row.item))));
   for (const source of [...rows]) {
-    if (source.metadataError || source.item.generatedFromImageId || source.detection.subtype !== 'main'
+    if (isDSAEbayAccount(sectionIndex) || source.metadataError || source.item.generatedFromImageId || source.detection.subtype !== 'main'
         || !['DT', 'DB'].includes(source.detection.variation)) continue;
     const sourceName = listingSourceName(source.item), stem = sourceName.replace(/\.[^/.]+$/, '');
     const unmainStem = `${stem} unmain`;
@@ -2628,13 +2629,14 @@ function exportBatchFileName(batchItems) {
   return `${name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim()}.zip`;
 }
 async function exportBatchArchive(batchItems, format, archiveName = exportBatchFileName(batchItems), progressLabel = 'Exporting') {
-  const entries = ['Main/', 'unmain/'].map(name => ({name, blob: new Blob([])})), usedNames = new Set();
+  const flatArchive = batchItems.length > 0 && batchItems.every(item => isDSAEbayAccount(item.watermarkSection));
+  const entries = (flatArchive ? [] : ['Main/', 'unmain/']).map(name => ({name, blob: new Blob([])})), usedNames = new Set();
   for (let index = 0; index < batchItems.length; index += 1) {
     setStatus(`${progressLabel} ${index + 1} of ${batchItems.length}…`);
-    const folder = usesNormalTemplate(batchItems[index]) ? 'unmain' : 'Main';
+    const prefix = flatArchive ? '' : usesNormalTemplate(batchItems[index]) ? 'unmain/' : 'Main/';
     const requestedName = exportFileName(batchItems[index], format), stem = requestedName.slice(0, -(format.length + 1));
-    let name = `${folder}/${requestedName}`, copyNumber = 2;
-    while (usedNames.has(name.toLowerCase())) name = `${folder}/${stem} (${copyNumber++}).${format}`;
+    let name = `${prefix}${requestedName}`, copyNumber = 2;
+    while (usedNames.has(name.toLowerCase())) name = `${prefix}${stem} (${copyNumber++}).${format}`;
     usedNames.add(name.toLowerCase());
     entries.push({name, blob: await createExportBlob(batchItems[index], format)});
   }
