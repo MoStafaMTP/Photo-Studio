@@ -6,7 +6,7 @@
 
 ## September 26 workspace extension
 
-The [workspace update handoff](WORKSPACE_UPDATE_HANDOFF.md) documents the completed Full Screen/Grid views, fixed Layers with expandable tools, account watermark templates below the account list, and editable text layers. It includes the pre-update Git checkpoint, implementation details, the initial 220 passing browser checks, and the revised 55-check workspace suite. The revised layout separates Image Size/Shadow, puts Resize below Image Size, moves icon-only view controls to the image corner, and pins downloads and format in a floating workspace dock while Grid View hides the left sidebar; the header stays on one line. The Phase 1.2 Listing and background preparation behavior below remains in place; composed/generated images now also preserve text layers.
+The [workspace update handoff](WORKSPACE_UPDATE_HANDOFF.md) documents the completed Full Screen/Grid views, fixed Layers with an icon sidebar, account watermark templates below the account list, and editable text layers. It includes the pre-update Git checkpoint, implementation details, the initial 220 passing browser checks, and the latest 61-check workspace plus 17-check background-toggle validation. Three icons open one panel at a time: Image Size & Shadow (including Resize and Background moved from the header), Saved Watermarks, and Text Editor. Resize remains below Image Size, icon-only view controls sit at the image corner, and downloads and format stay in a floating workspace dock while Grid View hides the left sidebar; the header stays on one line. The Phase 1.2 Listing and background preparation behavior below remains in place; composed/generated images now also preserve text layers.
 
 ## What Phase 1.2 adds
 

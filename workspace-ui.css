@@ -18,19 +18,22 @@
 .editor-shell.is-grid { grid-template-columns:minmax(0,1fr); }
 .editor-shell.is-grid .editor-sidebar { display:none; }
 .editor-workspace { display:grid; grid-template-columns:minmax(0,1fr) 374px; grid-template-rows:minmax(0,1fr) auto; overflow:hidden; }
-.editor-workspace .editor-toolbar { display:flex; flex-direction:column; flex-wrap:nowrap; align-items:stretch; gap:0; padding:0; height:100%; min-height:0; overflow:hidden; background:#f7f7fa; }
-.editor-toolbar > .layer-control { flex:none; margin:0; padding:16px; border:0; border-bottom:1px solid #dddde5; border-radius:0; box-shadow:none; background:#fff; }
+.editor-workspace .editor-toolbar { display:grid; grid-template-columns:minmax(0,1fr) 54px; grid-template-rows:auto minmax(0,1fr); align-items:stretch; gap:0; padding:0; height:100%; min-height:0; overflow:hidden; background:#f7f7fa; }
+.editor-toolbar > .layer-control { grid-column:1; grid-row:1; min-width:0; margin:0; padding:16px 12px; border:0; border-bottom:1px solid #dddde5; border-radius:0; box-shadow:none; background:#fff; }
 .editor-toolbar .layer-control > .toolbar-label { font-size:12px; letter-spacing:0; text-transform:none; color:#1c1c1e; }
 .layer-list { max-height:clamp(54px,19dvh,190px); }
 .layer-drop-zone { min-height:35px; padding:6px; }
 .layer-row .layer-text-preview { display:grid; place-items:center; width:38px; height:38px; border-radius:8px; background:#fff; color:#007aff; font:600 24px Georgia,serif; }
-.sidebar-sections { flex:1 1 0; min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; scrollbar-gutter:stable; padding:12px; }
-.sidebar-section { margin-bottom:10px; border:1px solid #dddde5; border-radius:13px; background:#fff; overflow:hidden; }
-.sidebar-section > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 13px; color:#1c1c1e; font-size:13px; font-weight:650; cursor:pointer; list-style:none; user-select:none; }
-.sidebar-section > summary::-webkit-details-marker { display:none; }
-.sidebar-section > summary::after,.watermark-section-button::after { content:''; width:7px; height:7px; flex:none; border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor; transform:rotate(45deg); margin:0 3px 4px; }
-.sidebar-section[open] > summary::after,.watermark-section-button[aria-expanded=true]::after { transform:rotate(225deg); margin-bottom:0; }
-.sidebar-section[open] > summary { border-bottom:1px solid #eeeef2; }
+.sidebar-icon-nav { grid-column:2; grid-row:1/-1; display:flex; flex-direction:column; align-items:center; gap:9px; padding:14px 6px; background:#fff; border-left:1px solid #dddde5; }
+.sidebar-icon-nav button { display:grid; place-items:center; flex:none; width:40px; height:42px; padding:0; border:0; border-radius:11px; color:#636366; background:transparent; cursor:pointer; }
+.sidebar-icon-nav button:hover { background:#f2f2f7; color:#1c1c1e; }
+.sidebar-icon-nav button[aria-selected=true] { background:#e5f1ff; color:#007aff; box-shadow:inset 0 0 0 1px #b5d8ff; }
+.sidebar-icon-nav .ui-icon { width:22px; height:22px; }
+.sidebar-sections { grid-column:1; grid-row:2; min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; scrollbar-gutter:stable; padding:12px 10px; }
+.sidebar-section { border:1px solid #dddde5; border-radius:13px; background:#fff; overflow:hidden; }
+.sidebar-section-title { margin:0; padding:15px 12px; border-bottom:1px solid #eeeef2; color:#1c1c1e; font:650 13px -apple-system,BlinkMacSystemFont,system-ui,sans-serif; }
+.watermark-section-button::after { content:''; width:7px; height:7px; flex:none; border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor; transform:rotate(45deg); margin:0 3px 4px; }
+.watermark-section-button[aria-expanded=true]::after { transform:rotate(225deg); margin-bottom:0; }
 .sidebar-section-body { padding:12px; }
 .editor-toolbar .sidebar-section .toolbar-group { width:100%; margin:0; padding:0; border:0; border-radius:0; box-shadow:none; }
 .sizing-controls { display:grid; grid-template-columns:1fr; gap:16px; }
@@ -44,6 +47,12 @@
 .sizing-controls .size-x { text-align:center; }
 .shadow-control > .toolbar-label { text-transform:none; letter-spacing:0; font-size:11px; }
 .shadow-control label { gap:6px; font-size:11px; }
+.editor-toolbar .sidebar-section .shadow-control,.editor-toolbar .sidebar-section .background-control { margin-top:18px; padding-top:16px; border-top:1px solid #eeeef2; }
+.sidebar-section .background-control { display:grid; grid-template-columns:minmax(0,1fr) 40px; gap:10px; }
+.sidebar-section .background-control > .toolbar-label { grid-column:1/-1; text-transform:none; letter-spacing:0; font-size:11px; }
+.sidebar-section .background-control input[type=color] { width:40px; height:36px; }
+.background-removal-actions { grid-column:1/-1; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.background-removal-actions .tool-toggle { padding:0 6px; font-size:11px; }
 .watermark-sections { grid-template-columns:1fr; }
 .watermark-template-panel { position:static; width:100%; max-height:none; margin:12px 0 0; padding:12px 0 0; border:0; border-top:1px solid #eeeef2; border-radius:0; box-shadow:none; overflow:visible; }
 .watermark-account { min-width:0; }
@@ -114,6 +123,11 @@ button:focus-visible,summary:focus-visible,.text-settings input:focus-visible,.t
  .editor-workspace { display:grid; grid-template-columns:1fr; grid-template-rows:55dvh auto; height:100%; min-height:0; padding-bottom:calc(var(--export-dock-height, 50px) + 24px); overflow:auto; }
  .canvas-stage { height:55dvh; }
  .editor-workspace .editor-toolbar { grid-column:1; grid-row:2; height:70dvh; min-height:440px; border-left:0; }
+ .sidebar-sections { padding:8px 4px; }
+ .sidebar-section-body { padding:10px 8px; }
+ .editor-toolbar > .layer-control { padding:12px 6px; }
+ .layer-primary-actions { grid-template-columns:1fr 1fr; }
+ .layer-primary-actions .layer-add-button { grid-column:1/-1; }
  .batch-grid-view { height:55dvh; }
  .batch-grid-heading { padding:14px; }
  .batch-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:4px 12px 16px; }

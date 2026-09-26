@@ -2,7 +2,7 @@
 
 Status: implemented and browser-verified on 2026-09-26, following the user's confirmation to implement now.
 
-Requested: 2026-09-26. Revised after user review to separate size/shadow sections, stack Resize, list accounts vertically, move templates below all accounts, move icon-only view controls to the image corner, return the header to one line, and pin downloads/format outside the sidebar so Grid View can hide the sidebar.
+Requested: 2026-09-26. Revised after user review to use three exclusive icon-selected tool panels, combine Image Size/Shadow/Background, stack Resize below Image Size, list accounts vertically, move templates below all accounts, move icon-only view controls to the image corner, return the header to one line, and pin downloads/format outside the sidebar so Grid View can hide the sidebar.
 
 The first workspace implementation is preserved at [`39121d4`](https://github.com/MoStafaMTP/Photo-Studio/commit/39121d4271b1e61b248e82767832da4606add81b).
 
@@ -27,23 +27,23 @@ Retain current batch selection behavior in the grid: single-image selection, Ctr
 
 Keep **Layers** fixed at the top of the Right Side and always open. Its controls and layer list must remain accessible while the tools below scroll; a long layer list may scroll within its own area.
 
-Below Layers, provide four independent expandable sections in this order:
+An icon rail on the far right selects one of three panels below Layers:
 
-1. **Image Size** (with Resize Canvas below the size controls)
-2. **Shadow**
-3. **Saved Watermarks**
-4. **Text Editor**
+1. **Image Size & Shadow** (Image Size, Resize Canvas, Shadow and Background)
+2. **Saved Watermarks**
+3. **Text Editor**
 
-Clicking a section header opens its contents; clicking again can collapse it. Opening or closing a section must preserve all editing values and layer selections. Headers must support keyboard operation and expose their expanded/collapsed state.
+Clicking an icon opens only its panel; clicking the active icon keeps it open. Switching panels preserves editing values, layer selection and each panel's scroll position, without creating an Undo step. Each icon has a tooltip and accessible name. The vertical tablist uses selected-state attributes, associated tabpanels and a single keyboard tab stop; Up/Down, Home and End select tabs without triggering image movement.
 
-The request does not specify whether opening one section should close another. The implemented default is independent sections, allowing more than one to stay open. Image Size and Shadow start open; Saved Watermarks and Text Editor start closed. Selecting a text layer opens Text Editor.
+Image Size & Shadow starts open. Selecting a different text layer opens Text Editor exclusively. Users can then switch to Image Size & Shadow to adjust that text layer without the panel switching back on every edit.
 
-### Image Size and Shadow
+### Image Size & Shadow
 
 - Include the existing Image Size slider and numeric percentage field.
-- Place **Resize Canvas** underneath the Image Size controls inside the Image Size section.
+- Place **Resize Canvas** underneath the Image Size controls inside this panel.
 - Preserve the distinction between Image Size (selected layer scale) and Resize (output canvas width/height in pixels).
-- Keep Shadow in its own expandable section with the existing controls: enable/disable, opacity/intensity, angle and distance.
+- Keep Shadow as a distinct control group within the combined panel, with the existing controls: enable/disable, opacity/intensity, angle and distance.
+- Move **Background** out of the header and into this panel below Shadow. Preserve None/Color, the color picker, Remove BG and Remove All BG, including their existing selection, history and background-toggle behavior.
 - Retain current per-layer behavior, group scaling and default 80% intensity when adding a shadow.
 - Keep the controls readable and responsive; stack adjacent controls at narrow widths if needed.
 
@@ -104,7 +104,8 @@ Text must render consistently in the main canvas, left-side thumbnails, grid pre
 
 - `workspace-ui.js` assembles the shared Full Screen/Grid view switch, sidebar sections and responsive header. Grid cards offer select, edit, duplicate and delete actions; double-click also opens an image in Full Screen View. Ctrl/Command multi-selection and existing batch shortcuts share the original selection state.
 - Grid previews use `renderEditorComposition(item)` in `script.js`, the same renderer as the editor and export. A separate cache uses edit-state keys; one dirty image is processed per animation frame, prioritizing the active image. Export, workflow processing and dragging pause preview work. Previews never change active selection or create history steps.
-- `workspace-ui.css` is loaded after the existing stylesheets. Grid rows preserve their content height for large batches; the grid and left-side image list scroll independently. Layers has its own bounded list and stays above the scrolling accordion controls. On narrow mobile screens, the tools stack below the workspace. The export dock is fixed to the viewport bottom, remaining accessible while the workspace/tools scroll; Grid View also hides the compact mobile sidebar.
+- `workspace-ui.css` is loaded after the existing stylesheets. Grid rows preserve their content height for large batches; the grid and left-side image list scroll independently. Layers has its own bounded list and stays above the scrolling active panel. The icon rail remains beside both areas. On narrow mobile screens, the tools stack below the workspace. The export dock is fixed to the viewport bottom, remaining accessible while the workspace/tools scroll; Grid View also hides the compact mobile sidebar.
+- `showSidebarSection()` in `workspace-ui.js` manages exclusive panel visibility, accessible selection, focus and panel scroll restoration. Text selection uses this same function. Existing control nodes are moved into the panels so their event handlers and shared editor state stay intact.
 - `text-layers.js` owns structured `type: 'text'` layer data, canvas text layout/rendering, font readiness and Text Editor controls. A text layer is not permanently rasterized. It uses the shared position/rotation/flip/scale/shadow fields and existing layer bounds, grouping, ordering, history and deletion rules.
 - Duplication, copy/paste, batch duplication and generated unmain copies preserve text data with independent IDs. Image-asset loading and background removal skip text layers. Text can remain as the final layer after deleting the original image layer.
 - The header stays on one line. The export format and both download buttons are a sibling of the canvas/grid, outside the sidebar and its scrolling thumbnails. Desktop grid-cell positioning pins them to the workspace bottom-left; mobile uses fixed viewport positioning. A ResizeObserver measures the dock so Grid View reserves enough bottom space, including when controls wrap. Grid View hides the sidebar and expands into the freed space. Resize is below Image Size and controls canvas dimensions; Image Size controls the selected layer's percentage scale.
@@ -114,11 +115,11 @@ Load order is `text-layers.js`, `script.js`, `workspace-ui.js`, then `editor-his
 
 ## Validation
 
-The initial workspace implementation passed 220 checks across these six browser suites, with no uncaught browser errors. After the layout revision, the expanded workspace suite passed 55 checks, including header/control geometry, independent size/shadow panels, accounts on separate lines, templates below all accounts, floating downloads/format in both views, Grid View sidebar hiding, desktop/mobile scroll visibility, an actual Grid View ZIP download, and view-control gesture isolation. Other suite results below record the initial workspace baseline:
+The latest icon-sidebar revision passed 78 checks with no uncaught browser errors: the expanded 61-check workspace suite and the 17-check background-toggle suite. These verify exclusive panels, icon keyboard navigation, selection/history preservation, relocated Background controls, text-layer panel switching, header/control geometry, accounts on separate lines, templates below all accounts, floating downloads/format in both views, Grid View sidebar hiding, desktop/mobile scroll visibility, an actual Grid View ZIP download, and view-control gesture isolation. The initial workspace implementation passed 220 checks across all six suites; the history, layer-layout and Listing results below record that initial baseline and were not rerun for the icon-sidebar change:
 
 | Suite | Checks | Coverage |
 | --- | ---: | --- |
-| `tests/workspace-text.browser.cjs` | 55 | Real view/account/text UI interactions, shared selection, keyboard navigation, granular text history, group transforms, text/whole-image copies, image-only background removal, workflow/unmain text preservation, font failure fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
+| `tests/workspace-text.browser.cjs` | 61 | Exclusive icon panels, relocated Background controls, real view/account/text UI interactions, shared selection, keyboard navigation, granular text history, group transforms, text/whole-image copies, image-only background removal, workflow/unmain text preservation, font failure fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
 | `tests/editor-history.browser.cjs` | 59 | Existing whole-session history and all editing paths. |
 | `tests/layer-layout.browser.cjs` | 30 | Exact duplicate sizes and preserving compositions across account/template changes. |
 | `tests/listing-unmain.browser.cjs` | 39 | Template mapping, generated copies, metadata and real downloads. |
@@ -133,8 +134,8 @@ Screenshots were inspected at 1600 × 1000, including Grid View and text editing
 - [x] Switching views preserves edits, selection, order and Undo/Redo.
 - [x] Grid previews reflect the latest complete image composition.
 - [x] Layers stays at the top, remains open and remains usable with long layer/tool lists.
-- [x] Image Size, Shadow, Saved Watermarks and Text Editor expand independently.
-- [x] Resize is below Image Size, and Shadow has its own section with all controls preserved.
+- [x] Three icons select Image Size & Shadow, Saved Watermarks or Text Editor; only one panel is visible.
+- [x] Resize is below Image Size; Shadow and Background are separate groups in the same panel, with all controls preserved and Background removed from the header.
 - [x] Each account has its own line; its templates expand below all accounts.
 - [x] Icon-only view controls sit at the canvas/grid bottom-right without affecting image gestures.
 - [x] Downloads and export format stay visible in a floating dock when Grid View hides the sidebar; the header remains one line.

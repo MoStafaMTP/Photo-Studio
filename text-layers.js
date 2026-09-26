@@ -102,7 +102,7 @@ function syncTextEditorControls() {
   fields.selection.textContent = layers.length > 1 ? `${layers.length} text layers selected · styling applies to all` : '';
   if (!layer) { lastTextSelection = ''; return; }
   const selection = layers.map(entry => entry.id).join(',');
-  if (selection !== lastTextSelection) { fields.section.open = true; lastTextSelection = selection; }
+  if (selection !== lastTextSelection) { showSidebarSection(fields.section.id); lastTextSelection = selection; }
   Object.entries(fields.controls).forEach(([property, control]) => {
     const value = layer[property];
     if (control.value !== String(value ?? '')) control.value = value ?? '';
@@ -131,7 +131,7 @@ function initializeTextEditor(section, body) {
     <label>Outline (px)<input id="text-stroke-width" type="number" min="0" max="20" step="0.5"></label>
     <label>Outline color<input id="text-stroke-color" type="color"></label>
     <button type="button" class="text-shadow-toggle text-wide" id="text-shadow-toggle">Add shadow</button>
-    <p class="text-settings-note text-wide">Move and resize text with the layer controls. Shadow details are in the Shadow section.</p></fieldset>`;
+    <p class="text-settings-note text-wide">Move and resize text with the layer controls. Shadow settings are in Image Size &amp; Shadow.</p></fieldset>`;
   const controls = Object.fromEntries(Object.entries({text:'content', fontFamily:'font-family', fontSize:'font-size', color:'color', align:'align', opacity:'opacity', lineHeight:'line-height', letterSpacing:'letter-spacing', strokeWidth:'stroke-width', strokeColor:'stroke-color'}).map(([key, id]) => [key, body.querySelector(`#text-${id}`)]));
   TEXT_FONT_FAMILIES.forEach(family => { const option = document.createElement('option'); option.value = option.textContent = family; controls.fontFamily.append(option); });
   const buttons = [['bold','fontWeight',700,400], ['italic','fontStyle','italic','normal'], ['underline','underline',true,false], ['strike','strikethrough',true,false]].map(([name, property, on, off]) => {

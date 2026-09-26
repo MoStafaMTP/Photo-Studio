@@ -5,26 +5,62 @@ const workspaceShell = document.querySelector('.editor-shell');
 const workspace = document.querySelector('.editor-workspace');
 const sidebarTools = document.querySelector('.editor-toolbar');
 const sidebarSections = document.createElement('div'); sidebarSections.className = 'sidebar-sections';
-function sidebarSection(id, title, open = false) {
-  const section = document.createElement('details'); section.id = id; section.className = 'sidebar-section'; section.open = open;
-  const summary = document.createElement('summary'); summary.textContent = title;
-  const body = document.createElement('div'); body.className = 'sidebar-section-body';
-  section.append(summary, body); sidebarSections.append(section); return {section, body};
+const sidebarNav = document.createElement('div'); sidebarNav.className = 'sidebar-icon-nav';
+sidebarNav.setAttribute('role', 'tablist'); sidebarNav.setAttribute('aria-label', 'Editing tools'); sidebarNav.setAttribute('aria-orientation', 'vertical');
+const sidebarPanels = new Map();
+let activeSidebarSection = null;
+function showSidebarSection(id, {focus = false} = {}) {
+  if (!sidebarPanels.has(id)) return;
+  if (activeSidebarSection !== id) {
+    const previous = sidebarPanels.get(activeSidebarSection);
+    if (previous) previous.scrollTop = sidebarSections.scrollTop;
+    activeSidebarSection = id;
+    sidebarPanels.forEach((panel, key) => {
+      const selected = key === id;
+      panel.section.hidden = !selected; panel.button.setAttribute('aria-selected', String(selected)); panel.button.tabIndex = selected ? 0 : -1;
+    });
+    sidebarSections.scrollTop = sidebarPanels.get(id).scrollTop;
+  }
+  if (focus) sidebarPanels.get(id).button.focus({preventScroll: true});
 }
-const imageTools = sidebarSection('image-tools-section', 'Image Size', true);
+function sidebarSection(id, title, icon) {
+  const section = document.createElement('section'); section.id = id; section.className = 'sidebar-section'; section.hidden = true;
+  section.setAttribute('role', 'tabpanel'); section.setAttribute('aria-labelledby', `${id}-tab`); section.tabIndex = 0;
+  const heading = document.createElement('h2'); heading.className = 'sidebar-section-title'; heading.textContent = title;
+  const body = document.createElement('div'); body.className = 'sidebar-section-body';
+  const button = document.createElement('button'); button.type = 'button'; button.id = `${id}-tab`;
+  button.setAttribute('role', 'tab'); button.setAttribute('aria-controls', id); button.setAttribute('aria-label', title); button.setAttribute('aria-selected', 'false'); button.tabIndex = -1; button.title = title;
+  button.innerHTML = `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>`;
+  button.addEventListener('click', () => showSidebarSection(id));
+  button.addEventListener('keydown', event => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault(); event.stopPropagation();
+    const ids = [...sidebarPanels.keys()], current = ids.indexOf(id);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + ids.length) % ids.length;
+    showSidebarSection(ids[next], {focus: true});
+  });
+  section.append(heading, body); sidebarSections.append(section); sidebarNav.append(button);
+  const panel = {section, body, button, scrollTop: 0}; sidebarPanels.set(id, panel); return panel;
+}
+const imageTools = sidebarSection('image-tools-section', 'Image Size & Shadow', '<path d="M4 6h4m6 0h6M4 12h9m6 0h1M4 18h1m6 0h9"/><circle cx="11" cy="6" r="3"/><circle cx="16" cy="12" r="3"/><circle cx="8" cy="18" r="3"/>');
 const sizingControls = document.createElement('div'); sizingControls.className = 'sizing-controls';
 resizeGroup.classList.remove('header-tool-group', 'header-resize-control'); resizeGroup.classList.add('canvas-resize-control');
 resizeGroup.querySelector('.toolbar-label').textContent = 'Resize canvas (px)';
 resizeWidth.setAttribute('aria-label', 'Canvas width in pixels'); resizeHeight.setAttribute('aria-label', 'Canvas height in pixels');
 sizingControls.append(document.querySelector('.image-size-control'), resizeGroup);
 imageTools.body.append(sizingControls);
-const shadowTools = sidebarSection('shadow-tools-section', 'Shadow', true);
 const shadowControls = document.querySelector('.shadow-control');
-shadowControls.querySelector('.toolbar-label')?.remove(); shadowTools.body.append(shadowControls);
-const savedWatermarks = sidebarSection('saved-watermarks-section', 'Saved Watermarks');
+backgroundGroup.classList.remove('header-tool-group', 'header-background-control');
+backgroundGroup.querySelector('.toolbar-label').textContent = 'Background';
+backgroundColor.setAttribute('aria-label', 'Background color');
+const backgroundRemovalActions = document.createElement('div'); backgroundRemovalActions.className = 'background-removal-actions';
+backgroundRemovalActions.append(removeBgButton, removeAllBgButton); backgroundGroup.append(backgroundRemovalActions);
+imageTools.body.append(shadowControls, backgroundGroup);
+const savedWatermarks = sidebarSection('saved-watermarks-section', 'Saved Watermarks', '<path d="M4 17h16v4H4zM6 17v-3h12v3M9 14v-3c0-2-2-3-2-5a5 5 0 0 1 10 0c0 2-2 3-2 5v3"/>');
 watermarkLibrary.querySelector(':scope > .toolbar-label')?.remove(); savedWatermarks.body.append(watermarkLibrary);
-const textTools = sidebarSection('text-editor-section', 'Text Editor'); initializeTextEditor(textTools.section, textTools.body);
-sidebarTools.replaceChildren(layerGroup, sidebarSections, fitSelect);
+const textTools = sidebarSection('text-editor-section', 'Text Editor', '<path d="M5 8V5h14v3M12 5v14M8 19h8"/>'); initializeTextEditor(textTools.section, textTools.body);
+sidebarTools.replaceChildren(layerGroup, sidebarSections, sidebarNav, fitSelect);
+showSidebarSection('image-tools-section');
 
 const viewSwitch = document.createElement('div'); viewSwitch.className = 'workspace-view-switch'; viewSwitch.setAttribute('role', 'group'); viewSwitch.setAttribute('aria-label', 'Workspace view');
 const viewButtons = ['full', 'grid'].map(view => {
