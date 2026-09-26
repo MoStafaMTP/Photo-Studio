@@ -94,7 +94,7 @@ The reconstructed background fills the output canvas. The transparent product la
 
 ## Safe-area fitting
 
-The top and bottom margins are converted from template dimensions using the same centered cover transform as the watermark, including non-square outputs. An additional **50 output-pixel inset** is applied at the top, bottom and canvas sides for every prepared product. It is independent of browser zoom and does not scale with the template. Old `clearance: 0` values no longer bypass this minimum, including on custom margins. Applying the workflow rejects configurations that leave no room for the gap instead of silently discarding the margins.
+The top and bottom margins are converted from template dimensions using the same centered cover transform as the watermark, including non-square outputs. The ordinary fit includes an additional **50 output-pixel inset** at the top, bottom and canvas sides. It is independent of browser zoom and does not scale with the template. Old `clearance: 0` values no longer bypass this minimum, including on custom margins. Normal templates can use transparent header space while preserving 50px clearance from actual header artwork, as described below. Applying the workflow rejects configurations that leave no room for the gap instead of silently discarding the margins.
 
 The product's visible bounding box is scaled with `contain` logic. Rotation is included in the fit calculation. At the initial 100% image size:
 
@@ -103,9 +103,11 @@ The product's visible bounding box is scaled with `contain` logic. Rotation is i
 - no product cropping occurs;
 - the product is centered in the available safe rectangle.
 
-Normal templates now use the same centered safe-area fit as Main and Passenger templates. This supersedes the previous upward lift and extra 8% enlargement, which could reduce the requested gap and shift the product away from the center. Proportions and rotated bounds are preserved; full-image fallbacks use the same inset.
+**Normal templates:** separated products can grow proportionally by up to 8% and move slightly upward into the transparent space between the top logos. Horizontal centering, canvas-edge clearance and at least the original bottom clearance are preserved. Total upward travel is limited to 8% of the canvas height. Width-limited products can move upward without further enlargement. The renderer checks the transformed product silhouette against the actual header artwork with a conservative 50px exclusion mask. Native watermark pixels are pooled before the mask is reduced, so thin artwork is retained; a small sampling allowance prevents antialiasing from eroding the gap. Middle branding remains an intentional overlay. If even the baseline crowds a corner logo, a conservative full-band fit is used. Close View images, explicit custom margins and full-image fallback preparations are excluded.
 
-Positioning is calculated at the automatic 100% size, then the user's manual scale and drag offsets are applied. The 50px gap and safe-area centering describe automatic placement; deliberate manual adjustments can change them. The manual center action centers the selected layer/group on the canvas. Base-layer position updates use the actual current geometry, fixing drift during centering, dragging and group scaling when the safe-area center differs from the canvas center.
+Normal fit results and header masks are cached per preparation/image and invalidated by output dimensions, watermark image, geometry and transforms. Preview, thumbnails, selection bounds and export use the same geometry.
+
+Positioning is calculated at the automatic 100% size, then the user's manual scale and drag offsets are applied. The 50px gap and automatic positioning rules describe automatic placement; deliberate manual adjustments can change them. The manual center action centers the selected layer/group on the canvas, including Normal-template products. Base-layer position updates use the actual current geometry, fixing drift during centering, dragging and group scaling when the automatic center differs from the canvas center.
 
 After preparation, the normal editor controls remain available. The product can be dragged, moved with arrow keys, Shift-dragged on one axis, resized with the Image Size control or mouse wheel, rotated, flipped, centered, and given a per-layer shadow. The reconstructed background remains fixed while those product adjustments are made.
 
@@ -137,7 +139,7 @@ As in earlier phases, uploaded images and editing state are not persisted after 
 
 ## Validation performed
 
-The spacing/centering update passed the 24-check `tests/listing-preparation.browser.cjs` suite: 1,368 placement cases across 57 templates, four output sizes, two product proportions and three rotations; output pixels in JPG/PNG/WebP; movement and centering without drift; Close View protection through buttons, Ctrl+B, mixed selections, duplicates and clipboard; native pixels even with stale removal/scale/preparation state; oversized Close Views; and invalid-margin rejection. The seven metadata unit tests and 19 CPIS browser integration checks also passed.
+The Normal upper-space update passed 54 checks in `tests/normal-template-fit.browser.cjs`: all seven Normal templates, native-pixel checks for at least 50px header clearance at four output sizes, rotation and both flips, wide-product fallback, custom margins, full-width banners, manual edits, Close View preservation and production export. Sample enlargement ranged from 1.8% to 8%; the Elite sample's top whitespace dropped from 229px to 103px. The updated 24-check `tests/listing-preparation.browser.cjs` suite also passed, retaining its 1,368 placement cases and background/export regression coverage with Normal-specific header positioning.
 
 The CPIS integration passed 7 unit tests covering metadata validation and all 55 primary/shared-code and subtype combinations, 19 browser integration checks, and the existing 16-check Elite/Close View regression suite. Metadata precedence, atomic validation errors, duplicate identity, visual undo isolation, JSON import, bad image decoding, and the exact pixels of a metadata-driven Close View export were checked.
 

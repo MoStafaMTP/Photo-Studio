@@ -41,8 +41,8 @@ const path = require('node:path');
       assert('Only non-Close View images enter automatic background separation', separations === 3 && removals === 0);
       assert('Metadata determines Close View handling before filename fallback', !files[3].smartPrep && files[3].originalSize && files[4].smartPrep && !files[4].originalSize);
 
-      // Every bundled watermark, rotations, portrait/landscape products and output
-      // sizes must respect the same output-pixel gap and centered safe area.
+      // Normal templates can use the clear upper center; all other templates keep
+      // the full-width top inset. Every layout retains bottom/side clearance.
       let placements = 0;
       for (const [sectionIndex, section] of watermarkSections.entries()) {
         for (const template of section.templates) {
@@ -57,8 +57,9 @@ const path = require('node:path');
               const item = {...base, rotation, watermarkSection: sectionIndex, watermarkTemplateId: template.id, watermarkImage: image,
                 smartPrep: {...base.smartPrep, safeArea}};
               const rect = smartProductGeometry(item);
-              if (!rect || !near(rect.x, width / 2) || !near(rect.y, (top + bottom) / 2)
-                || rect.y - rect.height / 2 < top + 50 - .001 || rect.y + rect.height / 2 > bottom - 50 + .001
+              const normal = template.name === 'Normal';
+              if (!rect || !near(rect.x, width / 2) || (!normal && !near(rect.y, (top + bottom) / 2))
+                || rect.y - rect.height / 2 < (normal ? 50 : top + 50) - .001 || rect.y + rect.height / 2 > bottom - 50 + .001
                 || rect.x - rect.width / 2 < 50 - .001 || rect.x + rect.width / 2 > width - 50 + .001) {
                 throw Error(`Gap/center failure: ${section.name}/${template.name}, ${width}x${height}, rotation ${rotation}`);
               }
@@ -67,7 +68,7 @@ const path = require('node:path');
           }
         }
       }
-      assert('All 57 templates retain 50px clearance and safe-area centering at four output sizes and three rotations', placements === 1368);
+      assert('All 57 templates preserve side/bottom clearance and horizontal centering, with adaptive Normal headers, across four output sizes and three rotations', placements === 1368);
       canvas.width = canvas.height = 1576;
       const legacy = smartSafeRect({safeArea: {canvasWidth: 1500, canvasHeight: 1500, topMargin: 200, bottomMargin: 120, clearance: 0, source: 'custom'}});
       assert('Legacy zero-clearance and custom margins cannot remove the 50px inset', near(legacy.y, 200 / 1500 * 1576 + 50) && near(legacy.height, 1180 / 1500 * 1576 - 100));

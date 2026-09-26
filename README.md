@@ -70,8 +70,8 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 - Reconstruct the background behind the product's original position.
 - Analyze each watermark's alpha channel to find its largest clear horizontal band.
 - Fit the complete product proportionally inside that safe area without cropping.
-- Keep a minimum 50 output-pixel gap inside the template margins, including Normal templates and custom margins. Automatic fitting keeps the product centered without an upward shift.
-- Center the product horizontally and vertically in the available area.
+- Keep a minimum 50 output-pixel gap inside template margins. Normal templates can grow products upward by up to 8% into clear space between the top logos, while checking the actual silhouette for 50px artwork clearance and preserving proportions and bottom spacing. Custom margins and full-image fallbacks retain the ordinary fit.
+- Center the product horizontally; ordinary fitting also centers vertically in the safe area, while Normal templates use available upper-center space.
 - Review and edit top and bottom margins in the Watermark Template Manager.
 - Bundled templates use the account/template margins from `Template Sizes.pdf`, saved in `watermark-safe-areas.js` at the native 1500 × 1500 template size. Margins follow the watermark's centered cover scaling; the additional 50px gap stays fixed in output pixels, independent of browser zoom.
 - Older automatic measurements are replaced by the shared defaults; explicit custom margins are preserved. **Use default** restores the supplied margins, and **Analyze** saves a new measurement.
@@ -134,7 +134,9 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 
 ## Validation
 
-The spacing/centering update passed 24 browser checks, including 1,368 placement cases across all 57 templates, four output sizes, two product proportions and three rotations; JPG/PNG/WebP pixel checks; prepared-layer movement/centering; Close View background and size protection; duplicates; and impossible-margin validation. Run `node tests/listing-preparation.browser.cjs` with Playwright available for testing. Optional `PLAYWRIGHT_MODULE` and `BROWSER_EXECUTABLE` environment variables can point to existing installations.
+Normal-template fitting passed 54 checks in `tests/normal-template-fit.browser.cjs`, including native-pixel 50px header clearance for all seven Normal templates at four output sizes, rotation/flips, wide products, custom margins, full-width banners, Close View preservation and export. The sample Elite product grew 8% and its top whitespace decreased from 229px to 103px.
+
+The updated preparation suite passed 24 browser checks, including 1,368 placement cases across all 57 templates, four output sizes, two product proportions and three rotations; JPG/PNG/WebP pixel checks; prepared-layer movement/centering; Close View background and size protection; duplicates; and impossible-margin validation. Run `node tests/listing-preparation.browser.cjs` and `node tests/normal-template-fit.browser.cjs` with Playwright available for testing. Optional `PLAYWRIGHT_MODULE` and `BROWSER_EXECUTABLE` environment variables can point to existing installations.
 
 The CPIS update passed 7 unit tests (including all 55 variation/shared-component and subtype combinations), 19 integration browser checks, and the existing 16-check Elite/Close View browser suite. Run `node --test tests/listing-metadata.test.cjs` for the repeatable metadata checks.
 

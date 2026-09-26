@@ -625,6 +625,102 @@ function smartSafeRect(preparation, outputWidth = canvas.width, outputHeight = c
     width: Math.max(0, outputWidth - SMART_WATERMARK_GAP * 2),
     height: Math.max(0, bottom - top - SMART_WATERMARK_GAP * 2)};
 }
+const normalHeaderMasks = new WeakMap();
+const normalProductFits = new WeakMap();
+function normalHeaderMask(image, safeRect) {
+  // The middle branding is an intentional overlay; only protect the header here.
+  const headerHeight = Math.min(canvas.height, Math.ceil(Math.max(safeRect.y, canvas.height * .25)));
+  const key = `${canvas.width}:${canvas.height}:${headerHeight}`;
+  const cached = normalHeaderMasks.get(image);
+  if (cached?.key === key) return cached;
+  const analysisScale = Math.min(1, 400 / Math.max(canvas.width, canvas.height));
+  const width = Math.ceil(canvas.width * analysisScale);
+  const scale = width / canvas.width;
+  const radius = Math.ceil(SMART_WATERMARK_GAP * scale) + 2;
+  const height = Math.min(Math.ceil(canvas.height * scale), Math.ceil(headerHeight * scale) + radius);
+  const work = document.createElement('canvas'); work.width = canvas.width; work.height = headerHeight;
+  const context = work.getContext('2d', {willReadFrequently: true});
+  const fit = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+  const drawWidth = image.naturalWidth * fit, drawHeight = image.naturalHeight * fit;
+  context.drawImage(image, (canvas.width - drawWidth) / 2, (canvas.height - drawHeight) / 2, drawWidth, drawHeight);
+  const pixels = context.getImageData(0, 0, work.width, work.height).data;
+  const occupied = new Uint8Array(width * height), mask = new Uint8Array(width * height);
+  let artworkBottom = 0;
+  // Pool native pixels so thin artwork cannot disappear when the mask is reduced.
+  for (let y = 0; y < headerHeight; y += 1) for (let x = 0; x < canvas.width; x += 1) {
+    if (pixels[(y * canvas.width + x) * 4 + 3] <= 16) continue;
+    occupied[Math.floor(y * scale) * width + Math.floor(x * scale)] = 1;
+    artworkBottom = y + 1;
+  }
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    if (!occupied[y * width + x]) continue;
+    for (let row = Math.max(0, y - radius); row <= Math.min(height - 1, y + radius); row += 1) {
+      mask.fill(1, row * width + Math.max(0, x - radius), row * width + Math.min(width, x + radius + 1));
+    }
+  }
+  const result = {key, width, height, scale, mask, artworkBottom, samplingGap: radius / scale};
+  normalHeaderMasks.set(image, result);
+  return result;
+}
+function fitNormalTemplateTop(item, geometry) {
+  const preparation = item.smartPrep;
+  const template = findWatermarkTemplate(item.watermarkSection, item.watermarkTemplateId);
+  if (isCloseViewImage(item) || item.originalSize || preparation.mode !== 'separated'
+      || preparation.safeArea.source === 'custom' || normalizeListingTemplateName(template?.name) !== 'normal'
+      || !item.watermarkImage?.naturalWidth) return geometry;
+  const key = [canvas.width, canvas.height, geometry.x, geometry.y, geometry.width, geometry.height, geometry.safeRect.y,
+    item.rotation || 0, Boolean(item.mirror), Boolean(item.flipY)].join(':');
+  const cached = normalProductFits.get(preparation);
+  if (cached?.key === key && cached.image === item.watermarkImage) return {...geometry, ...cached.adjustment};
+  let adjustment = {};
+  try {
+    const header = normalHeaderMask(item.watermarkImage, geometry.safeRect);
+    const top = geometry.y - geometry.height / 2;
+    const travel = Math.max(0, Math.min(canvas.height * .08, top - SMART_WATERMARK_GAP));
+    const growth = Math.max(0, Math.min(.08, geometry.safeRect.width / geometry.width - 1, travel / geometry.height));
+    const lift = travel - geometry.height * growth;
+    const candidate = (amount) => {
+      const factor = 1 + growth * amount;
+      return {y: geometry.y - (geometry.height * growth / 2 + lift) * amount,
+        width: geometry.width * factor, height: geometry.height * factor,
+        drawWidth: geometry.drawWidth * factor, drawHeight: geometry.drawHeight * factor};
+    };
+    const work = document.createElement('canvas'); work.width = header.width; work.height = header.height;
+    const context = work.getContext('2d', {willReadFrequently: true});
+    const fits = (next) => {
+      const bounds = geometry.bounds;
+      context.clearRect(0, 0, work.width, work.height); context.save();
+      context.scale(header.scale, header.scale);
+      context.translate(geometry.x, next.y); context.rotate((item.rotation || 0) * Math.PI / 180);
+      context.scale(item.mirror ? -1 : 1, item.flipY ? -1 : 1);
+      context.drawImage(preparation.foreground, bounds.x, bounds.y, bounds.width, bounds.height,
+        -next.drawWidth / 2, -next.drawHeight / 2, next.drawWidth, next.drawHeight);
+      context.restore();
+      const pixels = context.getImageData(0, 0, work.width, work.height).data;
+      return !header.mask.some((occupied, index) => occupied && pixels[index * 4 + 3] > 0);
+    };
+    if (fits(candidate(1))) adjustment = candidate(1);
+    else if (fits(candidate(0))) {
+      let low = 0, high = 1;
+      for (let step = 0; step < 10; step += 1) {
+        const middle = (low + high) / 2;
+        if (fits(candidate(middle))) low = middle; else high = middle;
+      }
+      adjustment = candidate(low);
+    } else {
+      // If a wide product already crowds a corner logo, retain a safe full-band fit.
+      const safeTop = Math.max(geometry.safeRect.y, header.artworkBottom + header.samplingGap + 1 / header.scale);
+      const safeBottom = geometry.y + geometry.height / 2;
+      if (safeTop < safeBottom) {
+        const factor = Math.min(1, (safeBottom - safeTop) / geometry.height);
+        adjustment = {y: (safeTop + safeBottom) / 2, width: geometry.width * factor, height: geometry.height * factor,
+          drawWidth: geometry.drawWidth * factor, drawHeight: geometry.drawHeight * factor};
+      }
+    }
+  } catch { /* Keep the ordinary safe fit when a custom image cannot be sampled. */ }
+  normalProductFits.set(preparation, {key, image: item.watermarkImage, adjustment});
+  return {...geometry, ...adjustment};
+}
 function smartProductGeometry(item) {
   const preparation = item?.smartPrep;
   if (isCloseViewImage(item) || !preparation?.foreground || !preparation?.bounds) return null;
@@ -634,7 +730,7 @@ function smartProductGeometry(item) {
   const rotatedWidth = Math.abs(bounds.width * Math.cos(radians)) + Math.abs(bounds.height * Math.sin(radians));
   const rotatedHeight = Math.abs(bounds.width * Math.sin(radians)) + Math.abs(bounds.height * Math.cos(radians));
   const fit = Math.min(safeRect.width / Math.max(1, rotatedWidth), safeRect.height / Math.max(1, rotatedHeight));
-  const geometry = {
+  const geometry = fitNormalTemplateTop(item, {
     x: safeRect.x + safeRect.width / 2,
     y: safeRect.y + safeRect.height / 2,
     drawWidth: bounds.width * fit,
@@ -643,7 +739,7 @@ function smartProductGeometry(item) {
     height: rotatedHeight * fit,
     bounds,
     safeRect
-  };
+  });
   const scale = (item.scale ?? 100) / 100;
   return {...geometry, x: geometry.x + (item.offsetX || 0), y: geometry.y + (item.offsetY || 0),
     drawWidth: geometry.drawWidth * scale, drawHeight: geometry.drawHeight * scale,
