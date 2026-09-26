@@ -29,6 +29,11 @@ const os = require('node:os');
     }));
     check('The right sidebar has three labelled icons and only one visible panel', await page.evaluate(() => sidebarNav.querySelectorAll('[role="tab"]').length===3 && !sidebarNav.textContent.trim()
       && document.querySelectorAll('.sidebar-section:not([hidden])').length===1 && sidebarNav.querySelector('[aria-selected="true"]').getAttribute('aria-label')==='Image Size & Shadow'));
+    check('Tool sections sit directly beneath Layers without a separate card',await page.evaluate(()=>{
+      const layers=layerGroup.getBoundingClientRect(),panel=imageTools.section.getBoundingClientRect(),style=getComputedStyle(imageTools.section);
+      return Math.abs(panel.top-layers.bottom)<1 && Math.abs(panel.left-layers.left)<1 && style.borderTopWidth==='0px' && style.borderRadius==='0px' && getComputedStyle(sidebarSections).paddingTop==='0px';
+    }));
+    check('Relative layer alignment is disabled for a single selected layer',await page.getByRole('button',{name:'Align selected layers vertically with each other',exact:true}).isDisabled());
     const beforeTabs=await page.evaluate(()=>({history:undoStack.length,selection:[...selectedLayerIds],y:files[0].offsetY}));
     await page.getByRole('tab',{name:'Image Size & Shadow',exact:true}).focus(); await page.keyboard.press('ArrowDown');
     check('Arrow navigation opens only Saved Watermarks without moving the image', await page.evaluate(before=>activeSidebarSection==='saved-watermarks-section' && files[0].offsetY===before.y && document.querySelectorAll('.sidebar-section:not([hidden])').length===1,beforeTabs));
@@ -66,6 +71,21 @@ const os = require('node:os');
       });
       return allLayerEntityIds(files[0]).map(id=>({id,...getLayerEntityRect(files[0],id)}));
     });
+    const relativeCenter=await page.evaluate(()=>selectedLayerBounds(files[0]).y);
+    await page.getByRole('button',{name:'Align selected layers vertically with each other',exact:true}).click();
+    check('Relative alignment gives selected layers a shared vertical center without centering on the canvas',await page.evaluate(({before,target})=>{
+      const item=files[0],near=(a,b)=>Math.abs(a-b)<.00001,after=before.map(rect=>getLayerEntityRect(item,rect.id));
+      return !near(target,canvas.height/2) && near(after[0].y,target) && near(after[1].y,target) && near(after[2].y,before[2].y)
+        && after.every((rect,i)=>near(rect.x,before[i].x)&&near(rect.width,before[i].width)&&near(rect.height,before[i].height));
+    },{before:beforeVertical,target:relativeCenter}));
+    const afterAlignHistory=await page.evaluate(()=>undoStack.length);
+    await page.getByRole('button',{name:'Align selected layers vertically with each other',exact:true}).click();
+    check('Repeating relative alignment is a no-op with no extra Undo step',await page.evaluate(depth=>undoStack.length===depth,afterAlignHistory));
+    await page.keyboard.press('Control+z');
+    check('Undo restores the individual positions before relative alignment',await page.evaluate(before=>before.every(rect=>Math.abs(getLayerEntityRect(files[0],rect.id).y-rect.y)<.00001),beforeVertical));
+    await page.keyboard.press('Control+y');
+    check('Redo restores the shared selection-relative center',await page.evaluate(target=>getSelectedLayerEntities(files[0]).every(entity=>Math.abs(getLayerEntityRect(files[0],entity.id).y-target)<.00001),relativeCenter));
+    await page.keyboard.press('Control+z');
     await page.getByRole('button',{name:'Center selected layers vertically as a group',exact:true}).click();
     check('Vertical center moves the selection together without resizing or moving other layers',await page.evaluate(before=>{
       const item=files[0],near=(a,b)=>Math.abs(a-b)<.00001,after=before.map(rect=>getLayerEntityRect(item,rect.id)),dy=after[0].y-before[0].y;
@@ -94,11 +114,14 @@ const os = require('node:os');
     await page.locator('[data-watermark-section="0"]').hover();
     check('Hover does not open an account flyout', await page.locator('#account-template-panel').isHidden());
     await page.locator('[data-watermark-section="0"]').click();
-    check('Accounts stay on separate lines and templates expand below the entire list', await page.evaluate(() => {
-      const panel = watermarkTemplatePanel.getBoundingClientRect(), accounts = [...watermarkSectionList.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+    check('Watermark accounts occupy two columns in the requested order, with templates below', await page.evaluate(() => {
+      const panel = watermarkTemplatePanel.getBoundingClientRect(), buttons=[...watermarkSectionList.querySelectorAll('button')], accounts = buttons.map(button => button.getBoundingClientRect());
       return panel.top >= Math.max(...accounts.map(rect => rect.bottom)) && watermarkSectionList.nextElementSibling === watermarkTemplatePanel
-        && accounts.every((rect, index) => !index || rect.top >= accounts[index-1].bottom && Math.abs(rect.left-accounts[0].left) < 1);
+        && buttons.map(button=>button.textContent).join('|')==='US Auto Nation|DIY|US Auto Seat Cover|Master|US Auto Seat Factory|Premium|DSA eBay|Elite'
+        && accounts.every((rect,i)=>i%2 ? Math.abs(rect.top-accounts[i-1].top)<1 && rect.left>accounts[i-1].right : !i || rect.top>=accounts[i-2].bottom);
     }));
+    check('Account names have no dropdown arrows',await page.locator('.watermark-section-button').evaluateAll(buttons=>buttons.every(button=>getComputedStyle(button,'::after').content==='none' && !button.querySelector('svg'))));
+    await page.screenshot({path:path.join(os.tmpdir(),'photo-studio-watermarks.png')});
     await page.locator('[data-watermark-section="0"]').click();
     check('Clicking the account again collapses templates', await page.locator('#account-template-panel').isHidden());
     await page.getByRole('tab',{name:'Text Editor',exact:true}).click();
@@ -249,6 +272,11 @@ const os = require('node:os');
     check('Mobile Grid hides the sidebar but keeps exports on screen while tools scroll', await page.evaluate(() => {
       const bounds=exportActions.getBoundingClientRect();
       return document.querySelector('.editor-sidebar').getBoundingClientRect().width===0 && bounds.left>=0 && bounds.right<=innerWidth && bounds.top>0 && bounds.bottom<=innerHeight;
+    }));
+    await page.getByRole('tab',{name:'Saved Watermarks',exact:true}).click();
+    check('Mobile watermark accounts retain two readable columns without overflowing',await page.locator('.watermark-sections').evaluate(el=>{
+      const buttons=[...el.querySelectorAll('button')],a=buttons[0].getBoundingClientRect(),b=buttons[1].getBoundingClientRect();
+      return Math.abs(a.top-b.top)<1 && b.left>a.right && el.scrollWidth===el.clientWidth && buttons.every(button=>button.scrollWidth===button.clientWidth);
     }));
     check('No uncaught browser errors',errors.length===0);
     console.log(JSON.stringify({passed:checks.length,checks,errors},null,2));

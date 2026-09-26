@@ -28,7 +28,7 @@ Implemented on September 26, 2026: Full Screen/Grid views, an icon sidebar besid
 
 - **Full Screen View** keeps the main canvas and left-side image list. **Grid View** hides the left sidebar and displays the same batch as large current previews, with selection, edit, duplicate and delete controls. Double-click a preview to open it in Full Screen View.
 - Ctrl/Command multi-selection, Ctrl+Alt+A, Tab and Shift+Tab work in both views. Switching views preserves edits, layer selections, image order and Undo/Redo.
-- Layers stays open at the top. Three sidebar icons open **Image Size & Shadow**, **Saved Watermarks**, or **Text Editor** below Layers; only the selected panel is visible. Image Size & Shadow includes the Background controls previously in the header, including background removal.
+- Layers stays open at the top. Three sidebar icons open **Image Size & Shadow**, **Saved Watermarks**, or **Text Editor** directly below Layers on the same white surface, without a separate card; only the selected section is visible. Image Size & Shadow includes the Background controls previously in the header, including background removal.
 - Image Size & Shadow opens by default. Selecting a text layer opens Text Editor. Each icon has a tooltip and accessible label; Up/Down, Home and End navigate the focused icon rail without moving layers. Panel switching preserves edits, selection and panel scroll positions.
 - Resize canvas width/height is below the Image Size percentage controls. The header uses one line. Export format, Export current and Export Batch stay visible at its right edge in both views while image lists scroll. On narrow screens the export buttons use icons with tooltips and accessible names.
 - Full Screen/Grid controls are accessible icons at the bottom-right of the canvas, or the grid area in Grid View. They are editor overlays and are never included in exported pixels.
@@ -53,6 +53,7 @@ Implemented on September 26, 2026: Full Screen/Grid views, an icon sidebar besid
 - Add, duplicate, delete, select, group, resize, and reorder layers.
 - Layers has one action row: Add images, Select all, Clear, Duplicate and Delete. Smaller, Bigger and Side By Side controls are removed; scale adjustments remain in Image Size and canvas scrolling.
 - The Position group's vertical-center icon moves the selected layers together to the canvas's vertical center, preserving their sizes, horizontal positions and spacing. The Movement Lock selector is removed; Shift-drag still constrains movement to one axis.
+- A separate **Align selected layers vertically with each other** icon places their individual centers on the selection's current vertical midpoint. It preserves horizontal positions and sizes, leaves unselected layers untouched, requires at least two selected layers, and supports Undo/Redo.
 - Images uploaded or dropped into Layers start at 100% of the proportional canvas fit; the old hidden 32% reduction is removed. A 1576 × 1576 layer fills a 1576 × 1576 canvas at 100%. The size controls display fractional percentages and support added layers up to 500%; Close Views still use native pixel size.
 - Duplicate and copy/paste preserve the displayed layer size, rotation, flips, shadows, and prepared product cutout. Prepared copies can toggle between their original background and saved cutout.
 - Click empty space outside the canvas to deselect layers; editing controls preserve the selection.
@@ -66,7 +67,7 @@ Implemented on September 26, 2026: Full Screen/Grid views, an icon sidebar besid
 
 ### Watermarks
 
-- Eight account-specific Saved Watermarks sections. Each account occupies its own line. Click an account to expand its templates below the complete account list; click again to close.
+- Eight account-specific Saved Watermarks sections, with two accounts per row and no dropdown arrows: US Auto Nation / DIY, US Auto Seat Cover / Master, US Auto Seat Factory / Premium, DSA eBay / Elite. Click an account to expand its templates below the complete account list; click again to close.
 - 57 bundled PNG templates, including eight Elite templates, available to every clone of the repository.
 - Upload, rename, select, disable, and delete personal watermark templates.
 - Apply watermark changes only to the selected left-side image or Ctrl/Command-selected images.
@@ -175,7 +176,7 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 
 ## Validation
 
-The latest Layers/header revision passed 127 browser checks: 68 in `tests/workspace-text.browser.cjs` and 59 in `tests/editor-history.browser.cjs`. Workspace checks cover the simplified layer actions, group vertical centering with Undo/Redo, exclusive icon panels, keyboard tab navigation, relocated Background controls, the single-line header and its export controls, bottom-right view controls, account templates below all accounts, text editing, selection/navigation, group/copy behavior, workflow/unmain copies, font fallback, export pixels and a downloaded ZIP. A 35-image batch scrolls inside the workspace. Layout is checked at desktop, smaller desktop and mobile sizes. The initial workspace implementation passed 220 checks across six suites; the preceding icon-sidebar revision passed 78 workspace/background checks. Those historical results are recorded in the workspace handoff.
+The latest sidebar/alignment revision passed 76 browser checks in `tests/workspace-text.browser.cjs`. These cover sections directly below Layers, two-column watermark accounts without arrows, relative layer alignment and canvas centering with Undo/Redo, simplified layer actions, exclusive icon panels, keyboard navigation, Background controls, header exports, text editing, group/copy behavior, workflow/unmain copies, font fallback, export pixels and a downloaded ZIP. A 35-image batch scrolls inside the workspace. Layout is checked at desktop, smaller desktop and mobile sizes. Earlier revisions passed 127 workspace/history checks, 78 workspace/background checks and the initial 220 checks across six suites; those historical results are recorded in the workspace handoff.
 
 `tests/background-toggle.browser.cjs` passes 17 checks with its generated fixture and 25 checks when run with the supplied `9.jpg` and `FullSet.jpg`. Real clicks and keyboard events verify pressed/enabled state, deselection, exact original-PNG restoration, cached repeated toggles, numeric-field Ctrl+B, Undo/Redo, prepared-source restoration, duplicates, groups, deleted base layers and Close View protection. Optional image paths can be passed as command-line arguments; the supplied photos remain outside the repository.
 

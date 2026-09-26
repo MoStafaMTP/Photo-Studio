@@ -2,7 +2,7 @@
 
 Status: implemented and browser-verified on 2026-09-26, following the user's confirmation to implement now.
 
-Requested: 2026-09-26. Revised after user review to use three exclusive icon-selected tool panels, combine Image Size/Shadow/Background, stack Resize below Image Size, list accounts vertically, move templates below all accounts, move icon-only view controls to the image corner, and return the header to one line. The latest revision simplifies Layers, places downloads/format in the header, and replaces Movement Lock with group vertical centering.
+Requested: 2026-09-26. Revised after user review to use three exclusive icon-selected tool sections directly beneath Layers without separate cards, combine Image Size/Shadow/Background, stack Resize below Image Size, show accounts two per row without arrows, move templates below all accounts, move icon-only view controls to the image corner, and return the header to one line. Layers has simplified actions, downloads/format are in the header, and canvas group centering and relative layer alignment replace Movement Lock.
 
 The first workspace implementation is preserved at [`39121d4`](https://github.com/MoStafaMTP/Photo-Studio/commit/39121d4271b1e61b248e82767832da4606add81b).
 
@@ -29,7 +29,9 @@ Keep **Layers** fixed at the top of the Right Side and always open. Its controls
 
 The top action row contains Add images, Select all, Clear, Duplicate and Delete (the last two are icons). It wraps within the same action group on mobile. Smaller, Bigger and Side By Side actions are removed. Image Size and scrolling remain available for scaling. The Position group no longer includes Movement Lock; its vertical-center icon moves the selected layers as one group to the canvas midpoint, preserving horizontal positions, sizes and relative spacing. Unselected layers stay in place, and the action supports Undo/Redo. Shift-drag still constrains motion to the dominant axis.
 
-An icon rail on the far right selects one of three panels below Layers:
+A separate **Align selected layers vertically with each other** icon sets every selected layer's vertical center to the selection's current bounding-box midpoint. It keeps horizontal positions and sizes, does not move unselected layers, and works independently of the canvas center. It is disabled with fewer than two selected layers. Undo/Redo restores the individual positions; repeating alignment does not create an empty history step.
+
+An icon rail on the far right selects one of three sections directly below Layers. The section shares the sidebar's white background, without an outer border, rounded card or inset gap:
 
 1. **Image Size & Shadow** (Image Size, Resize Canvas, Shadow and Background)
 2. **Saved Watermarks**
@@ -51,7 +53,7 @@ Image Size & Shadow starts open. Selecting a different text layer opens Text Edi
 
 ### Saved Watermarks
 
-- Show each saved watermark account on its own full-width line.
+- Show two accounts per row, without dropdown arrows, in this order: US Auto Nation / DIY; US Auto Seat Cover / Master; US Auto Seat Factory / Premium; DSA eBay / Elite. Keep this pairing on narrow screens and allow long account names to wrap.
 - Clicking an eBay account opens its templates and related options **below the complete account list**.
 - Use this inline expansion in place of the previous template panel that appears to the left on hover.
 - Selecting a template keeps the existing rule: apply it only to the selected batch images.
@@ -112,17 +114,18 @@ Text must render consistently in the main canvas, left-side thumbnails, grid pre
 - Duplication, copy/paste, batch duplication and generated unmain copies preserve text data with independent IDs. Image-asset loading and background removal skip text layers. Text can remain as the final layer after deleting the original image layer.
 - The header stays on one line. The export format and both download buttons are direct header children, outside the horizontally scrollable editing tools. Export labels collapse to accessible icons on narrow screens; the format selector stays visible. The old floating dock and its resize observer are removed. Grid View reserves bottom space only for the view controls, hides the sidebar and expands into the freed space. Resize is below Image Size and controls canvas dimensions; Image Size controls the selected layer's percentage scale.
 - Movement Lock is removed from the DOM, movement handlers and history settings. Vertical centering reuses `centerSelectedLayerEntities('y')`, which translates the selection by a common offset without scaling or changing internal arrangement.
+- `alignSelectedLayerCentersVertically()` uses the selection bounds before editing to give all selected layers a shared vertical center. It preserves each layer's horizontal center and routes changes through the existing layer-position and history helpers.
 - Personal watermarks still persist in IndexedDB. Uploaded images, text layers, view state and Undo/Redo are session state, consistent with the existing editor; this update does not add project-file persistence across reloads.
 
 Load order is `text-layers.js`, `script.js`, `workspace-ui.js`, then `editor-history.js` after the existing watermark/metadata modules. Text functions are initialized before the renderer, but their controls are assembled after the main editor DOM exists.
 
 ## Validation
 
-The latest Layers/header revision passed 127 checks with no uncaught browser errors: the 68-check workspace suite and the 59-check history suite. These verify the new layer action row, group vertical centering without changing geometry or unselected layers, Undo/Redo, exclusive panels, keyboard navigation, relocated Background controls, text-layer panel switching, header exports, accounts on separate lines, templates below all accounts, Grid View sidebar hiding, desktop/mobile scroll visibility, an actual Grid View ZIP download, and view-control gesture isolation. The preceding icon-sidebar revision passed 78 workspace/background checks. The initial workspace implementation passed 220 checks across all six suites. The layer-layout, Listing and background results in the table are historical validations, not reruns for this latest change:
+The latest sidebar/alignment revision passed 76 workspace browser checks with no uncaught browser errors. These verify sections directly beneath Layers without cards, paired watermark accounts without arrows on desktop/mobile, selection-relative vertical alignment and its no-op/Undo/Redo behavior, canvas group centering, simplified layer actions, exclusive panels, keyboard navigation, Background controls, text-layer panel switching, header exports, templates below all accounts, Grid View sidebar hiding, desktop/mobile scroll visibility, a downloaded Grid View ZIP, and view-control gesture isolation. Earlier revisions passed 127 workspace/history checks, 78 workspace/background checks and the initial 220 checks across six suites. The other suite results in the table are historical validations, not reruns for this latest change:
 
 | Suite | Checks | Coverage |
 | --- | ---: | --- |
-| `tests/workspace-text.browser.cjs` | 68 | Simplified layer actions, vertical group centering and history, exclusive icon panels, header exports, relocated Background controls, real view/account/text UI interactions, shared selection, keyboard navigation, granular text history, group transforms, text/whole-image copies, image-only background removal, workflow/unmain text preservation, font failure fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
+| `tests/workspace-text.browser.cjs` | 76 | Seamless sections below Layers, paired watermark accounts without arrows, relative alignment and canvas group centering with history, simplified layer actions, exclusive icon panels, header exports, Background controls, real view/account/text interactions, keyboard navigation, text history/transforms/copies, image-only background removal, workflow/unmain preservation, font fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
 | `tests/editor-history.browser.cjs` | 59 | Existing whole-session history and all editing paths. |
 | `tests/layer-layout.browser.cjs` | 30 | Exact duplicate sizes and preserving compositions across account/template changes. |
 | `tests/listing-unmain.browser.cjs` | 39 | Template mapping, generated copies, metadata and real downloads. |
@@ -137,13 +140,14 @@ Screenshots were inspected at 1600 × 1000, including Grid View and text editing
 - [x] Switching views preserves edits, selection, order and Undo/Redo.
 - [x] Grid previews reflect the latest complete image composition.
 - [x] Layers stays at the top, remains open and remains usable with long layer/tool lists.
-- [x] Three icons select Image Size & Shadow, Saved Watermarks or Text Editor; only one panel is visible.
+- [x] Three icons select Image Size & Shadow, Saved Watermarks or Text Editor; only one section is visible, directly below Layers without a separate card.
 - [x] Resize is below Image Size; Shadow and Background are separate groups in the same panel, with all controls preserved and Background removed from the header.
-- [x] Each account has its own line; its templates expand below all accounts.
+- [x] Accounts appear two per row without dropdown arrows; their templates expand below all accounts.
 - [x] Icon-only view controls sit at the canvas/grid bottom-right without affecting image gestures.
 - [x] Downloads and export format stay visible in the header when Grid View hides the sidebar; the header remains one line.
 - [x] Duplicate and Delete sit beside Add images, Select all and Clear; Smaller, Bigger and Side By Side are removed.
 - [x] Group vertical centering replaces Movement Lock and preserves size, horizontal position and spacing, with Undo/Redo support.
+- [x] An additional relative-alignment icon gives selected layers a shared vertical center at their current location, with Undo/Redo support.
 - [x] Text can be added, edited, styled and manipulated as a true layer.
 - [x] Text input shortcuts do not accidentally trigger destructive layer actions.
 - [x] Text, fonts and styling match across previews and all export formats.
