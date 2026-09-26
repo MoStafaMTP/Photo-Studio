@@ -408,13 +408,27 @@ async function duplicateBatchImage(index) {
     setStatus(`${duplicate.displayName} added to the batch.`);
   } catch { setStatus('The image could not be duplicated.'); renderThumbs(); }
 }
+function getBackgroundTargetEntities(item) {
+  if (!item) return [];
+  const selected = getSelectedLayerEntities(item);
+  if (selected.length) return selected;
+  // Clicking empty space hides selection handles, but a single-layer image
+  // should still have an available background toggle.
+  const ids = allLayerEntityIds(item);
+  return ids.length === 1 ? [getLayerEntity(item, ids[0])] : [];
+}
 function updateRemoveBackgroundControls() {
   const item = files[activeIndex];
-  const selected = item ? getSelectedLayerEntities(item).filter((entity) => !isCloseViewImage(entity.data)) : [];
-  const eligible = files.flatMap((entry) => [entry, ...(entry.layers || [])]).filter((entry) => !isCloseViewImage(entry));
+  const selected = getBackgroundTargetEntities(item).filter((entity) => !isCloseViewImage(entity.data));
+  const eligible = files.flatMap(entry => allLayerEntityIds(entry).map(id => getLayerEntity(entry, id).data)).filter(entry => !isCloseViewImage(entry));
+  const removed = Boolean(selected.length) && selected.every(entity => entity.data.removeBg);
+  const mixed = !removed && selected.some(entity => entity.data.removeBg);
   removeBgButton.disabled = !selected.length;
   removeAllBgButton.disabled = !eligible.length;
-  removeBgButton.classList.toggle('active', Boolean(selected.length) && selected.every((entity) => entity.data.removeBg));
+  removeBgButton.classList.toggle('active', removed);
+  removeBgButton.setAttribute('aria-pressed', mixed ? 'mixed' : String(removed));
+  removeBgButton.setAttribute('aria-keyshortcuts', 'Control+B Meta+B');
+  removeBgButton.title = removed ? 'Restore original background (Ctrl+B)' : 'Remove background (Ctrl+B)';
   removeAllBgButton.classList.toggle('active', Boolean(eligible.length) && eligible.every((entry) => entry.removeBg));
 }
 function removeBatchImage(index) {
@@ -465,11 +479,26 @@ function createBackgroundRemovedSource(source) {
   // Never key out similar colors inside the product or erase an uncertain subject.
   if (analysis.reliable) {
     for (let i = 0; i < analysis.backgroundMask.length; i++) if (analysis.backgroundMask[i]) pixels.data[i * 4 + 3] = 0;
-    refineCutoutEdges(pixels);
+    refineCutoutEdges(pixels, analysis.corners);
   }
   workCtx.putImageData(pixels, 0, 0); return work;
 }
-function refineCutoutEdges(pixels) {
+let cutoutCoverageRamp;
+function getCutoutCoverageRamp() {
+  if (cutoutCoverageRamp) return cutoutCoverageRamp;
+  // Convert Gaussian coverage back to contour distance, then trim one native
+  // pixel and feather the next two. This avoids square, stair-stepped erosion.
+  const ramp = new Uint8Array(4097), sigma = Math.sqrt(1.5), step = .002;
+  let cumulative = .5, level = 2048;
+  for (let distance = 0; distance <= 8; distance += step) {
+    cumulative += Math.exp(-.5 * ((distance + step / 2) / sigma) ** 2) / (sigma * Math.sqrt(2 * Math.PI)) * step;
+    const end = Math.min(4096, Math.floor(cumulative * 4096));
+    const alpha = Math.round(255 * Math.max(0, Math.min(1, (distance - 1) / 2)));
+    while (level <= end) ramp[level++] = alpha;
+  }
+  ramp.fill(255, level); cutoutCoverageRamp = ramp; return ramp;
+}
+function refineCutoutEdges(pixels, backgroundCorners = null) {
   const {width, height, data} = pixels, inset = new Uint8Array(width * height), protectedDetail = new Uint8Array(width * height);
   // Trim against actual transparent background, not the outside of the canvas.
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
@@ -499,35 +528,67 @@ function refineCutoutEdges(pixels) {
     for (let yy = Math.max(0, y - 2); !hasCore && yy <= Math.min(height - 1, y + 2); yy++) for (let xx = Math.max(0, x - 2); xx <= Math.min(width - 1, x + 2); xx++) if (detailCore[yy * width + xx]) { hasCore = true; break; }
     if (!hasCore) protectedDetail[index] = 1;
   }
-  const edgeAlpha = inset.slice();
+  const detailGuard = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const index = y * width + x;
     if (!data[index * 4 + 3]) continue;
-    for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++) {
-      if (protectedDetail[yy * width + xx]) edgeAlpha[index] = data[index * 4 + 3];
+    for (let yy = Math.max(0, y - 2); yy <= Math.min(height - 1, y + 2); yy++) for (let xx = Math.max(0, x - 2); xx <= Math.min(width - 1, x + 2); xx++) {
+      if (protectedDetail[yy * width + xx]) detailGuard[index] = 1;
     }
   }
-  // Smooth silhouette coverage, not source alpha or RGB. A wider, separable
-  // 5-tap filter softens diagonal steps without blurring texture or spreading
-  // translucency inside the product. Out-of-canvas samples repeat the edge.
-  const weights = [1, 4, 6, 4, 1], horizontal = new Uint8Array(width * height);
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    let coverage = 0;
-    for (let dx = -2; dx <= 2; dx++) {
-      if (edgeAlpha[y * width + Math.max(0, Math.min(width - 1, x + dx))]) coverage += weights[dx + 2];
-    }
-    horizontal[y * width + x] = coverage;
-  }
-  // Keep the one-pixel fringe removed. Remap coverage to an inward-only ramp:
-  // a straight opaque edge now fades through ~96/223/255 rather than 191/255.
-  // Thin features protected above retain their source opacity and connections.
+  // Recover fractional coverage from the source edge's foreground/background
+  // mixture. Binary color-keying discards this information and leaves jaggies
+  // and a light matte when the cutout is enlarged or placed over dark colors.
+  const matte = new Uint8Array(width * height);
+  const hasOpaqueBackground = backgroundCorners?.every(corner => corner[3] >= 240);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const index = y * width + x, offset = index * 4;
-    if (protectedDetail[index] || edgeAlpha[index] > inset[index]) continue;
-    if (!edgeAlpha[index]) { data[offset + 3] = 0; continue; }
+    if (!data[offset + 3]) continue;
+    matte[index] = 255;
+    if (detailCore[index]) continue;
+    if (data[offset + 3] < 255) { matte[index] = data[offset + 3]; continue; }
+    if (!hasOpaqueBackground) continue;
+    const radius = detailGuard[index] ? 8 : 4;
+    let nearest = -1, distance = radius * radius * 2 + 1;
+    for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+      const xx = x + dx, yy = y + dy, squared = dx * dx + dy * dy;
+      if (xx < 0 || yy < 0 || xx >= width || yy >= height || squared >= distance) continue;
+      const neighbor = yy * width + xx;
+      if (detailCore[neighbor] && data[neighbor * 4 + 3] === 255) { nearest = neighbor * 4; distance = squared; }
+    }
+    if (nearest < 0) continue;
+    const background = interpolatedBackgroundColor(backgroundCorners, x / Math.max(1, width - 1), y / Math.max(1, height - 1));
+    let contrast = 0, projection = 0;
+    for (let channel = 0; channel < 3; channel++) {
+      const difference = data[nearest + channel] - background[channel];
+      contrast += difference * difference; projection += (data[offset + channel] - background[channel]) * difference;
+    }
+    if (contrast < 900) continue; // Ambiguous light products retain their source pixels.
+    const coverage = projection / contrast;
+    if (coverage >= .98) continue;
+    let residual = 0;
+    for (let channel = 0; channel < 3; channel++) residual += Math.abs(data[offset + channel] - (background[channel] + coverage * (data[nearest + channel] - background[channel])));
+    if (residual > 12) continue; // A color/texture change is not necessarily transparency.
+    if (coverage <= .02) { matte[index] = 0; data[offset + 3] = 0; continue; }
+    matte[index] = Math.round(coverage * 255);
+    if (detailGuard[index]) data[offset + 3] = Math.min(data[offset + 3], matte[index]);
+    if (coverage >= .1) for (let channel = 0; channel < 3; channel++) data[offset + channel] = Math.round(clampNumber((data[offset + channel] - (1 - coverage) * background[channel]) / coverage, 0, 255));
+  }
+  // Filter the untrimmed, fractional matte, not a hard, box-eroded mask. The
+  // distance ramp supplies the inset without locking the contour to pixel steps.
+  const weights = [1, 6, 15, 20, 15, 6, 1], horizontal = new Uint16Array(width * height), ramp = getCutoutCoverageRamp();
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     let coverage = 0;
-    for (let dy = -2; dy <= 2; dy++) coverage += horizontal[Math.max(0, Math.min(height - 1, y + dy)) * width + x] * weights[dy + 2];
-    data[offset + 3] = Math.round(edgeAlpha[index] * Math.max(0, coverage - 128) / 128);
+    for (let dx = -3; dx <= 3; dx++) coverage += matte[y * width + Math.max(0, Math.min(width - 1, x + dx))] * weights[dx + 3];
+    horizontal[y * width + x] = coverage;
+  }
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const index = y * width + x, offset = index * 4;
+    if (detailGuard[index]) continue;
+    if (!data[offset + 3]) continue;
+    let coverage = 0;
+    for (let dy = -3; dy <= 3; dy++) coverage += horizontal[Math.max(0, Math.min(height - 1, y + dy)) * width + x] * weights[dy + 3];
+    data[offset + 3] = Math.min(data[offset + 3], ramp[Math.round(coverage / 255)]);
   }
 }
 function isCloseViewImage(item) {
@@ -547,6 +608,7 @@ function getImageSource(item) {
   return item.processed;
 }
 function getAddedLayerSource(layer) {
+  if (!isCloseViewImage(layer) && layer.removeBg && layer.sourceSnapshot?.cutout) return layer.sourceSnapshot.cutout;
   if (!isCloseViewImage(layer) && layer.sourceSnapshot?.removeBg === Boolean(layer.removeBg)) return layer.sourceSnapshot.image;
   if (!isCloseViewImage(layer) && !layer.removeBg && layer.sourceSnapshot?.original) return layer.sourceSnapshot.original;
   if (isCloseViewImage(layer) || !layer.removeBg) return layer.image;
@@ -702,7 +764,7 @@ function createSmartPreparation(source, safeArea, templateKey = '') {
     }
   }
   if (!reliable) { left = 0; top = 0; right = width - 1; bottom = height - 1; }
-  if (reliable && analysisScale === 1) refineCutoutEdges(foregroundPixels);
+  if (reliable && analysisScale === 1) refineCutoutEdges(foregroundPixels, corners);
   foregroundContext.putImageData(foregroundPixels, 0, 0);
   if (analysisScale < 1) {
     // Analyze a smaller image, but retain original-resolution product pixels.
@@ -712,15 +774,12 @@ function createSmartPreparation(source, safeArea, templateKey = '') {
     if (reliable) {
       fullContext.imageSmoothingEnabled = true; fullContext.imageSmoothingQuality = 'high';
       fullContext.drawImage(foreground, 0, 0, fullSize.width, fullSize.height);
-      // Recover the contour before trimming: resampling can introduce a faint
-      // outside mask edge. Source transparency is applied separately, once.
-      const maskPixels = fullContext.getImageData(0, 0, fullSize.width, fullSize.height);
-      for (let offset = 3; offset < maskPixels.data.length; offset += 4) maskPixels.data[offset] = maskPixels.data[offset] >= 128 ? 255 : 0;
-      fullContext.putImageData(maskPixels, 0, 0);
+      // Retain fractional mask coverage when upscaling. Thresholding it back
+      // to black/white creates visible pixel steps on the final native contour.
       fullContext.globalCompositeOperation = 'source-in'; fullContext.drawImage(source, 0, 0);
       fullContext.globalCompositeOperation = 'source-over';
       const fullPixels = fullContext.getImageData(0, 0, fullSize.width, fullSize.height);
-      refineCutoutEdges(fullPixels); fullContext.putImageData(fullPixels, 0, 0);
+      refineCutoutEdges(fullPixels, corners); fullContext.putImageData(fullPixels, 0, 0);
     } else fullContext.drawImage(source, 0, 0);
     foreground = fullSize;
   }
@@ -913,9 +972,16 @@ function drawSmartPreparedBase(item) {
   ctx.save();
   ctx.translate(geometry.x, geometry.y); ctx.rotate((item.rotation || 0) * Math.PI / 180); ctx.scale(item.mirror ? -1 : 1, item.flipY ? -1 : 1);
   if (item.shadow) { const distance = Number(item.shadowDistance ?? 18); const angle = Number(item.shadowAngle ?? 90); ctx.shadowColor = `rgba(36, 25, 20, ${Number(item.shadowStrength ?? 80) / 100})`; ctx.shadowBlur = 26; ctx.shadowOffsetX = Math.cos(angle * Math.PI / 180) * distance; ctx.shadowOffsetY = Math.sin(angle * Math.PI / 180) * distance; }
-  const foreground = item.removeBg && preparation.mode !== 'separated'
-    ? (item.processed ||= createBackgroundRemovedSource(preparation.foreground)) : preparation.foreground;
-  ctx.drawImage(foreground, bounds.x, bounds.y, bounds.width, bounds.height, -geometry.drawWidth / 2, -geometry.drawHeight / 2, geometry.drawWidth, geometry.drawHeight);
+  if (!item.removeBg && item.originalBackgroundRestored) {
+    // Restore the actual source, aligned to the fitted product. Keeping the
+    // preparation/bounds avoids a size or position jump when toggling back.
+    const size = imageSourceSize(item.image), sx = geometry.drawWidth / bounds.width, sy = geometry.drawHeight / bounds.height;
+    ctx.drawImage(item.image, -(bounds.x + bounds.width / 2) * sx, -(bounds.y + bounds.height / 2) * sy, size.width * sx, size.height * sy);
+  } else {
+    const foreground = item.removeBg && preparation.mode !== 'separated'
+      ? (item.processed ||= createBackgroundRemovedSource(preparation.foreground)) : preparation.foreground;
+    ctx.drawImage(foreground, bounds.x, bounds.y, bounds.width, bounds.height, -geometry.drawWidth / 2, -geometry.drawHeight / 2, geometry.drawWidth, geometry.drawHeight);
+  }
   ctx.restore();
 }
 function getBaseLayerDrawSize(item, image) {
@@ -1131,7 +1197,8 @@ function layerCopyDescriptor(item, id) {
     const sourceSize = imageSourceSize(item.image), analysisSize = imageSourceSize(item.smartPrep.foreground);
     original.getContext('2d').drawImage(item.image, bounds.x * sourceSize.width / analysisSize.width, bounds.y * sourceSize.height / analysisSize.height,
       bounds.width * sourceSize.width / analysisSize.width, bounds.height * sourceSize.height / analysisSize.height, 0, 0, original.width, original.height);
-    sourceSnapshot = {image, original, removeBg: item.removeBg || item.smartPrep.mode === 'separated'};
+    const removed = item.removeBg || (item.smartPrep.mode === 'separated' && !item.originalBackgroundRestored);
+    sourceSnapshot = {image: removed ? image : original, original, cutout: (item.removeBg || item.smartPrep.mode === 'separated') ? image : null, removeBg: removed};
   }
   const descriptor = {id: null, file: item.file, name: item.displayName || item.file.name, url: null, image: item.image, closeView: isCloseViewImage(item), x: rect.x, y: rect.y, scale: Math.max(minimumLayerScale(item), item.scale ?? 100), fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: sourceSnapshot ? sourceSnapshot.removeBg : Boolean(item.removeBg), processed: item.processed, sourceSnapshot, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
   const drawWidth = geometry?.drawWidth ?? getBaseLayerDrawSize(item, getImageSource(item)).width;
@@ -1510,13 +1577,13 @@ removeBgButton.addEventListener('click', () => {
   toggleSelectedLayerBackgrounds();
 });
 function toggleSelectedLayerBackgrounds() {
-  const item = files[activeIndex], selected = item ? getSelectedLayerEntities(item) : [];
+  const item = files[activeIndex], selected = getBackgroundTargetEntities(item);
   if (!selected.length) { setStatus('Select one or more layers first.'); return false; }
   const eligible = selected.filter((entity) => !isCloseViewImage(entity.data));
   if (!eligible.length) { setStatus('Close View images keep their original background.'); return false; }
   const nextValue = !eligible.every((entity) => entity.data.removeBg);
   saveHistory();
-  eligible.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.processed = null; });
+  eligible.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.originalBackgroundRestored = !nextValue; });
   syncSelectedLayerControls(); drawActive(); setStatus((nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.') + (eligible.length < selected.length ? ' Close View images were skipped.' : ''));
   return true;
 }
@@ -1540,7 +1607,9 @@ document.addEventListener('keydown', (event) => {
   setStatus(`Image ${nextIndex + 1} of ${files.length}: ${files[nextIndex].displayName || files[nextIndex].file.name}`);
 }, true);
 document.addEventListener('keydown', (event) => {
-  if (activeIndex < 0 || event.repeat || isLayerShortcutTypingTarget(event.target)) return;
+  const backgroundShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && event.code === 'KeyB';
+  const numericBackgroundShortcut = backgroundShortcut && event.target instanceof HTMLInputElement && ['number', 'range'].includes(event.target.type);
+  if (activeIndex < 0 || event.repeat || (isLayerShortcutTypingTarget(event.target) && !numericBackgroundShortcut)) return;
   const listingOverlay = document.querySelector('#listing-panel');
   if (listingOverlay && !listingOverlay.hidden) return;
   const commandKey = event.ctrlKey || event.metaKey;
@@ -1566,9 +1635,9 @@ removeAllBgButton.addEventListener('click', () => {
   if (!files.length) return;
   let count = 0, skipped = 0;
   files.forEach((item) => {
-    [item, ...(item.layers || [])].forEach((layer) => {
+    allLayerEntityIds(item).map(id => getLayerEntity(item, id).data).forEach((layer) => {
       if (isCloseViewImage(layer)) { skipped += 1; return; }
-      layer.removeBg = true; layer.processed = null; count += 1;
+      layer.removeBg = true; layer.originalBackgroundRestored = false; count += 1;
     });
   });
   syncSelectedLayerControls(); drawActive(); setStatus(`Background removal enabled for ${count} layer${count === 1 ? '' : 's'}.${skipped ? ' Close View images were skipped.' : ''}`);
@@ -2236,7 +2305,7 @@ async function applyListingWatermarksInternal() {
       }
       row.item.originalSize = Boolean(row.detection.closeView);
       if (row.detection.closeView) {
-        row.item.smartPrep = null; row.item.removeBg = false; row.item.processed = null;
+        row.item.smartPrep = null; row.item.removeBg = false; row.item.originalBackgroundRestored = false; row.item.processed = null;
         row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
         row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100;
         closeViewCount += 1;
@@ -2248,7 +2317,7 @@ async function applyListingWatermarksInternal() {
         if (row.item.smartPrep.mode === 'fallback') fallbackCount += 1;
         row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
         row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100; row.item.fit = 'contain';
-        row.item.removeBg = false; row.item.processed = null;
+        row.item.removeBg = false; row.item.originalBackgroundRestored = false; row.item.processed = null;
       } else row.item.smartPrep = null;
     }
     files.push(...generatedItems);
@@ -2682,7 +2751,7 @@ exportAll.addEventListener('click', async () => {
 document.querySelector('#reset-editor').addEventListener('click', () => withHistoryActionSync(() => {
   const item = files[activeIndex]; if (!item) return;
   Object.assign(item, {rotation: 0, mirror: false, flipY: false, offsetX: 0, offsetY: 0, scale: 100,
-    removeBg: false, processed: null, smartPrep: null, shadow: false, shadowAngle: 90, shadowDistance: 18,
+    removeBg: false, originalBackgroundRestored: false, processed: null, smartPrep: null, shadow: false, shadowAngle: 90, shadowDistance: 18,
     shadowStrength: 80, fit: 'contain', watermarkImage: null, watermarkEnabled: false, watermarkOpacity: 100,
     watermarkSection: null, watermarkTemplateId: null});
   fitSelect.value = 'contain'; setImageScaleInputs(100); resizeWidth.value = resizeHeight.value = 1576;

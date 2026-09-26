@@ -46,13 +46,23 @@ const fs = require('node:fs');
         if (transitions >= 2 && largestJump <= 160) smoothRows++;
       }
       check('Slanted edges receive a gradual transition along their whole length', smoothRows === 160);
+      const matted = plain(), mc = matted.getContext('2d'); mc.fillStyle = '#706a50'; mc.fillRect(32, 32, 192, 192);
+      for (const [x, coverage] of [[32, .15], [33, .5], [34, .9]]) {
+        mc.fillStyle = `rgb(${[112, 106, 80].map(value => Math.round(coverage * value + (1 - coverage) * 255)).join(',')})`; mc.fillRect(x, 32, 1, 192);
+      }
+      const mattedResult = createBackgroundRemovedSource(matted), edgeColors = [32, 33, 34, 35].map(x => pixel(mattedResult, x, 128)).filter(color => color[3]);
+      // Compare composited color: unpremultiplying very low 8-bit alpha can
+      // amplify rounding in RGB even though its visible contribution is tiny.
+      check('Soft source edges recover foreground color instead of retaining a white matte', edgeColors.some(color => color[3] < 255) && edgeColors.every(color => color.slice(0, 3).every((value, channel) => Math.abs(value - [112, 106, 80][channel]) * color[3] / 255 < 5)));
+      check('Removing a white matte leaves the product texture unchanged', pixel(mattedResult, 128, 128).join() === pixel(matted, 128, 128).join());
       const thin = plain(), tc = thin.getContext('2d'); tc.fillStyle = '#183950'; tc.fillRect(24, 160, 208, 64);
       for (let width = 1; width <= 4; width++) tc.fillRect(30 + width * 36, 35, width, 130);
       const thinResult = createBackgroundRemovedSource(thin);
       for (let width = 1; width <= 4; width++) {
-        check(`${width}px details stay visible and connected to the product`, Array.from({length: 128}, (_, y) => {
-          let alpha = 0; for (let x = 0; x < width; x++) alpha += pixel(thinResult, 30 + width * 36 + x, 36 + y)[3]; return alpha >= 128;
-        }).every(Boolean));
+        const rows = Array.from({length: 128}, (_, y) => {
+          let alpha = 0; for (let x = 0; x < width; x++) alpha += pixel(thinResult, 30 + width * 36 + x, 36 + y)[3]; return {y: 36 + y, alpha};
+        });
+        check(`${width}px details stay visible and connected to the product${rows.some(row => row.alpha < 128) ? ': ' + JSON.stringify(rows.filter(row => row.alpha < 128)) : ''}`, rows.every(row => row.alpha >= 128));
       }
       const transparent = make(), transparentContext = transparent.getContext('2d');
       transparentContext.fillStyle = '#183950'; transparentContext.fillRect(32, 32, 192, 192);
