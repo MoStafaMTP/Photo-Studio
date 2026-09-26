@@ -95,12 +95,14 @@ The engine runs entirely in the browser and requires no server or external API.
 - The engine adapts its tolerance to the color variation found along the source edges.
 - Only matching pixels connected to an image edge are classified as background. This prevents enclosed product areas with a similar color from being erased.
 - Original transparency is respected.
-- The resulting product is stored as a transparent in-memory canvas with placement bounds mapped to source pixel coordinates. A shared cleanup pass erodes the alpha mask by one source pixel and applies a 3 × 3 weighted inward feather; it cannot spread opacity back into the removed ring. This also applies to manual Remove BG. The canvas dimensions and pre-trim placement bounds stay unchanged, preserving fitted size and center.
+- The resulting product is stored as a transparent in-memory canvas with placement bounds mapped to source pixel coordinates. Shared cleanup trims broad silhouette edges by one source pixel and applies a 3 × 3 weighted inward feather. Details with no surviving eroded core, such as narrow straps or stitching, and their connections are protected. Cleanup uses actual transparent neighbors rather than the outside of the canvas and does not spread internal translucency. It cannot spread opacity back into removed background. This also applies to manual Remove BG. The canvas dimensions and pre-trim placement bounds stay unchanged, preserving fitted size and center.
 - If a dependable foreground cannot be found, the engine keeps the full image as a non-destructive fallback and marks the Listing row **Review fit**.
 
 The local separator is designed for the clean or gently graded product backgrounds normally used for marketplace photography. Complex scenes, background objects touching the product, or nearly identical product/background colors can use the safe full-image fallback rather than producing a destructive cutout.
 
-Manual removal recognizes transparent corners instead of treating them as a black color key, preserving dark products on transparent PNGs. Preview and export re-enable high-quality image resampling after every canvas resize. Close View sources bypass removal and edge cleanup entirely.
+Manual Remove BG now uses `analyzeProductBackground` in conservative mode instead of globally deleting/fading colors similar to the top-left pixel. Four corner samples model flat or graded background; a corner that disagrees with three agreeing corners is excluded from that model. Only matching pixels connected to the image border are removed, and growth stops at local color discontinuities. Manual color tolerance is bounded to 18–48 total RGB difference, versus the existing 58–135 workflow limits. If the border is mostly fully transparent, source opacity is respected instead of color-keying the product. Unreliable separation returns the original image intact. Workflow detection retains its previous thresholds through the shared helper's non-conservative mode.
+
+Preview and export re-enable high-quality image resampling after every canvas resize. Close View sources bypass removal and edge cleanup entirely. The manual method remains a local color/continuity heuristic; foreground indistinguishable from connected background can still require image-specific adjustment.
 
 ## Background reconstruction
 
@@ -162,6 +164,8 @@ History covers layer and batch uploads, duplication and deletion, stacking, size
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+`tests/subject-preservation.browser.cjs` passes 23 checks for interior colors matching the background, subtle light-subject boundaries, corner-touching subjects, thin features, existing transparency/translucency, gradients and uncertain-cutout fallback. Production actions cover Remove BG, repeated toggles, Undo/Redo, duplicates, added layers, Remove All BG, Close View protection and transparent PNG exports. Generated fixtures reproduce the old global-color deletion and thin-detail erosion; the user confirmed the issue occurs with Remove BG but did not provide a failing source photo.
 
 `tests/cutout-scale.browser.cjs` passes 31 checks covering manual/workflow fringe removal on all four edges, inward antialiasing and unchanged interior pixels, transparent dark products, original-resolution texture and mask edges on large images, non-destructive fallback, actual Layers file-drop events, percentage sizing including fractional and >300% values, Undo/Redo, duplicates, Close Views, stable workflow placement and transparent PNG export. Optional Google Fonts requests are blocked in browser tests to keep checks independent of network availability.
 

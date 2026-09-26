@@ -34,7 +34,8 @@ Detailed handoffs are available in:
 - Use `Delete` to remove selected layers, `Ctrl + C`/`Ctrl + V` to copy and paste them, `Ctrl + Enter` to center them, and `Ctrl + B` to toggle their backgrounds off or on.
 - Per-layer shadows with opacity, angle, and distance controls.
 - Manual background removal for selected layers or the complete batch; Close View sources are skipped, including by Ctrl+B.
-- Manual and workflow cutouts trim one source pixel from the silhouette and soften the inner edge without spreading back into the background. Workflow product pixels retain the original image resolution, and preview/export use high-quality resampling.
+- Remove BG follows background-colored areas connected to the image border, preserving matching colors inside the product. Conservative color/edge limits, corner-outlier rejection and an unchanged-image fallback reduce accidental subject removal; existing transparent backgrounds are respected.
+- Manual and workflow cutouts trim one source pixel from broad silhouette edges and soften inward, while retaining thin details and their connections. Cleanup does not trim against the outside of the canvas or spread internal translucency. Workflow product pixels retain the original image resolution, and preview/export use high-quality resampling.
 - Remove BG after Apply Workflow keeps the fitted product's size, center, rotation and placement. Prepared duplicates also keep their crop when backgrounds are toggled.
 - Session-wide Undo/Redo records each small movement, wheel/input adjustment, shadow, background, watermark, layer and canvas edit. Uploads, batch duplication/deletion, reset and Apply Workflow are reversible, including generated unmain images. There is no fixed 50-step limit. Use Ctrl+Z, Ctrl+Y, or Ctrl+Shift+Z.
 
@@ -144,6 +145,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. They are exempt from safe-area fitting and the 50px inset so that their original size and background are preserved. A source larger than the output canvas can extend beyond its edges; increase the output dimensions when needed. Manual enlargement is available, but shrinking below 100% and background removal are blocked for Close View sources and their layer/batch copies.
 
 ## Validation
+
+`tests/subject-preservation.browser.cjs` passes 23 checks covering white/light-gray subject interiors, subtle product boundaries, subjects touching a corner, one/two-pixel details, translucent regions, graded backgrounds and uncertain-cutout fallback. It also checks the actual Remove BG action, repeated toggles, Undo/Redo, duplicates, added layers, Remove All BG, Close View protection and transparent PNG export. These use generated fixtures; no user-supplied failing photo was available for this change.
 
 `tests/cutout-scale.browser.cjs` passes 31 checks for one-pixel fringe removal, inward antialiasing, transparent dark products, original-resolution texture and mask edges on large images, native fallback preservation, real file-drop handling, proportional percentage sizing, fractional/large scales, Undo/Redo, duplicates, Close View protection, fixed workflow geometry and transparent PNG export pixels. Browser tests block optional Google Fonts requests so network delays cannot prevent editor checks.
 

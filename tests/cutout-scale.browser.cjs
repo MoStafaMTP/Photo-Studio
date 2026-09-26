@@ -41,7 +41,9 @@ const path = require('node:path');
       cc.fillStyle = '#fff'; cc.fillRect(0, 0, 96, 96); cc.fillStyle = '#a00000'; cc.beginPath(); cc.arc(48.3, 48.3, 31.7, 0, Math.PI * 2); cc.fill();
       const curvedPixels = createBackgroundRemovedSource(curved).getContext('2d').getImageData(0, 0, 96, 96).data;
       const alphaLevels = new Set(); for (let i = 3; i < curvedPixels.length; i += 4) if (curvedPixels[i] > 0 && curvedPixels[i] < 255) alphaLevels.add(curvedPixels[i]);
-      check('Curved silhouettes have multiple antialiased alpha levels', alphaLevels.size > 10);
+      // The connected mask preserves interior alpha instead of applying a global
+      // color-key gradient; verify several fractional levels at the contour.
+      check('Curved silhouettes have multiple antialiased alpha levels', alphaLevels.size >= 5);
       const full = makeCanvas(2000, 1800), fc = full.getContext('2d');
       fc.fillStyle = '#fff'; fc.fillRect(0, 0, 2000, 1800); fc.fillStyle = '#606060'; fc.fillRect(400, 300, 1200, 1200);
       fc.fillStyle = '#900'; fc.fillRect(401, 301, 1198, 1198);

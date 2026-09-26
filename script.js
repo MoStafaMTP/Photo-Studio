@@ -459,34 +459,55 @@ function drawBackground() {
 }
 function createBackgroundRemovedSource(source) {
   const sourceWidth = source.naturalWidth || source.width, sourceHeight = source.naturalHeight || source.height;
-  const work = document.createElement('canvas'); work.width = sourceWidth; work.height = sourceHeight; const workCtx = work.getContext('2d'); workCtx.drawImage(source, 0, 0); const pixels = workCtx.getImageData(0, 0, work.width, work.height); const sample = [pixels.data[0], pixels.data[1], pixels.data[2]];
-  // Transparent corners are not a black background to key out of a dark product.
-  const transparentCorners = [0, sourceWidth - 1, (sourceHeight - 1) * sourceWidth, sourceWidth * sourceHeight - 1].every(index => pixels.data[index * 4 + 3] < 12);
-  if (!transparentCorners) {
-    for (let i = 0; i < pixels.data.length; i += 4) { const distance = Math.abs(pixels.data[i] - sample[0]) + Math.abs(pixels.data[i + 1] - sample[1]) + Math.abs(pixels.data[i + 2] - sample[2]); if (distance < 95) pixels.data[i + 3] = 0; else if (distance < 150) pixels.data[i + 3] = Math.round(((distance - 95) / 55) * pixels.data[i + 3]); }
+  const work = document.createElement('canvas'); work.width = sourceWidth; work.height = sourceHeight;
+  const workCtx = work.getContext('2d'); workCtx.drawImage(source, 0, 0);
+  const pixels = workCtx.getImageData(0, 0, work.width, work.height), analysis = analyzeProductBackground(pixels);
+  // Never key out similar colors inside the product or erase an uncertain subject.
+  if (analysis.reliable) {
+    for (let i = 0; i < analysis.backgroundMask.length; i++) if (analysis.backgroundMask[i]) pixels.data[i * 4 + 3] = 0;
+    refineCutoutEdges(pixels);
   }
-  refineCutoutEdges(pixels);
   workCtx.putImageData(pixels, 0, 0); return work;
 }
 function refineCutoutEdges(pixels) {
-  const {width, height, data} = pixels, inset = new Uint8Array(width * height);
-  // Remove one source-pixel ring. Keep the canvas and placement bounds unchanged.
-  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+  const {width, height, data} = pixels, inset = new Uint8Array(width * height), protectedDetail = new Uint8Array(width * height);
+  // Trim against actual transparent background, not the outside of the canvas.
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const index = y * width + x;
     let alpha = data[index * 4 + 3];
     if (!alpha) continue;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) alpha = Math.min(alpha, data[(index + dy * width + dx) * 4 + 3]);
+    for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++) if (!data[(yy * width + xx) * 4 + 3]) alpha = 0;
     inset[index] = alpha;
+  }
+  // A one/two-pixel strap, stitch or tip has no eroded core. Preserve it instead
+  // of shrinking it to nothing, and keep its connection to the thicker product.
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const index = y * width + x;
+    if (!data[index * 4 + 3] || inset[index]) continue;
+    let hasCore = false;
+    for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++) if (inset[yy * width + xx]) hasCore = true;
+    if (!hasCore) protectedDetail[index] = 1;
+  }
+  const edgeAlpha = inset.slice();
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const index = y * width + x;
+    if (!data[index * 4 + 3]) continue;
+    for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++) {
+      if (protectedDetail[yy * width + xx]) edgeAlpha[index] = data[index * 4 + 3];
+    }
   }
   // Feather inward only: smoothing must never recreate the removed outer halo.
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const index = y * width + x, offset = index * 4;
-    if (!inset[index]) { data[offset + 3] = 0; continue; }
-    let sum = 0;
+    if (edgeAlpha[index] > inset[index]) continue;
+    if (!edgeAlpha[index]) { data[offset + 3] = 0; continue; }
+    let sum = 0, touchesBackground = false;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      sum += inset[index + dy * width + dx] * (dx === 0 ? 2 : 1) * (dy === 0 ? 2 : 1);
+      const neighbor = Math.max(0, Math.min(height - 1, y + dy)) * width + Math.max(0, Math.min(width - 1, x + dx));
+      sum += edgeAlpha[neighbor] * (dx === 0 ? 2 : 1) * (dy === 0 ? 2 : 1);
+      if (!edgeAlpha[neighbor]) touchesBackground = true;
     }
-    data[offset + 3] = Math.min(inset[index], Math.round(sum / 16));
+    if (touchesBackground) data[offset + 3] = Math.min(edgeAlpha[index], Math.round(sum / 16));
   }
 }
 function isCloseViewImage(item) {
@@ -538,6 +559,89 @@ function interpolatedBackgroundColor(corners, xRatio, yRatio) {
     + corners[3][channel] * xRatio * yRatio
   );
 }
+function analyzeProductBackground(original, {conservative = true} = {}) {
+  const {width, height} = original;
+  const sampleSize = Math.max(2, Math.round(Math.min(width, height) * .035));
+  const corners = [
+    cornerAverage(original.data, width, height, 0, 0, sampleSize, sampleSize),
+    cornerAverage(original.data, width, height, width - sampleSize, 0, sampleSize, sampleSize),
+    cornerAverage(original.data, width, height, 0, height - sampleSize, sampleSize, sampleSize),
+    cornerAverage(original.data, width, height, width - sampleSize, height - sampleSize, sampleSize, sampleSize)
+  ];
+  if (conservative) {
+    // If three corners agree, the fourth can be part of the product rather than
+    // background. Do not use that corner to erase the same color everywhere.
+    const colorDistance = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+    for (let index = 0; index < corners.length; index++) {
+      const others = corners.filter((_, other) => other !== index);
+      if (others.every(a => a[3] > 240 && others.every(b => colorDistance(a, b) <= 60))
+          && others.every(a => colorDistance(a, corners[index]) > 120)) {
+        corners[index] = [0, 1, 2, 3].map(channel => others.reduce((sum, corner) => sum + corner[channel], 0) / others.length);
+      }
+    }
+  }
+  const colorDifference = (offset, expected) => Math.abs(original.data[offset] - expected[0]) + Math.abs(original.data[offset + 1] - expected[1]) + Math.abs(original.data[offset + 2] - expected[2]);
+  const borderDifferences = [];
+  let transparentBorderSamples = 0;
+  const borderStep = Math.max(1, Math.round(Math.min(width, height) / 220));
+  const collectBorderDifference = (x, y) => {
+    const expected = interpolatedBackgroundColor(corners, width > 1 ? x / (width - 1) : 0, height > 1 ? y / (height - 1) : 0);
+    borderDifferences.push(colorDifference((y * width + x) * 4, expected));
+    if (original.data[(y * width + x) * 4 + 3] === 0) transparentBorderSamples++;
+  };
+  for (let x = 0; x < width; x += borderStep) { collectBorderDifference(x, 0); collectBorderDifference(x, height - 1); }
+  for (let y = 0; y < height; y += borderStep) { collectBorderDifference(0, y); collectBorderDifference(width - 1, y); }
+  borderDifferences.sort((a, b) => a - b);
+  const borderPercentile = borderDifferences[Math.floor(borderDifferences.length * .78)] || 0;
+  const transparentBackground = conservative && transparentBorderSamples >= borderDifferences.length * .9;
+  const threshold = conservative ? clampNumber(borderPercentile + 12, 18, 48) : clampNumber(borderPercentile + 30, 58, 135);
+  const edgeThreshold = clampNumber(borderPercentile + 6, 10, 24);
+  const minimumAlpha = conservative ? 1 : 12;
+  const candidate = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    const yRatio = height > 1 ? y / (height - 1) : 0;
+    for (let x = 0; x < width; x += 1) {
+      const pixelIndex = y * width + x, offset = pixelIndex * 4;
+      if (original.data[offset + 3] < minimumAlpha) { candidate[pixelIndex] = 1; continue; }
+      if (transparentBackground) continue; // Respect an existing cutout's colors and alpha.
+      const expected = interpolatedBackgroundColor(corners, width > 1 ? x / (width - 1) : 0, yRatio);
+      if (colorDifference(offset, expected) <= threshold) candidate[pixelIndex] = 1;
+    }
+  }
+  const backgroundMask = new Uint8Array(width * height);
+  const queue = new Int32Array(width * height);
+  let queueStart = 0, queueEnd = 0;
+  const enqueue = (index, from = -1) => {
+    if (index < 0 || index >= candidate.length || backgroundMask[index] || !candidate[index]) return;
+    if (conservative && from >= 0 && original.data[index * 4 + 3] && original.data[from * 4 + 3]) {
+      const a = index * 4, b = from * 4;
+      if (Math.abs(original.data[a] - original.data[b]) + Math.abs(original.data[a + 1] - original.data[b + 1]) + Math.abs(original.data[a + 2] - original.data[b + 2]) > edgeThreshold) return;
+    }
+    backgroundMask[index] = 1; queue[queueEnd] = index; queueEnd += 1;
+  };
+  for (let x = 0; x < width; x += 1) { enqueue(x); enqueue((height - 1) * width + x); }
+  for (let y = 1; y < height - 1; y += 1) { enqueue(y * width); enqueue(y * width + width - 1); }
+  while (queueStart < queueEnd) {
+    const index = queue[queueStart]; queueStart += 1;
+    const x = index % width;
+    if (x > 0) enqueue(index - 1, index);
+    if (x + 1 < width) enqueue(index + 1, index);
+    if (index >= width) enqueue(index - width, index);
+    if (index + width < candidate.length) enqueue(index + width, index);
+  }
+  let left = width, top = height, right = -1, bottom = -1, foregroundCount = 0, opaqueCount = 0;
+  for (let index = 0; index < backgroundMask.length; index += 1) {
+    const alpha = original.data[index * 4 + 3];
+    if (alpha >= minimumAlpha) opaqueCount += 1;
+    if (backgroundMask[index] || alpha < minimumAlpha) continue;
+    foregroundCount += 1;
+    const x = index % width, y = Math.floor(index / width);
+    left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+  }
+  const coverage = foregroundCount / Math.max(1, opaqueCount);
+  const reliable = foregroundCount > 0 && (transparentBackground || (coverage >= .01 && coverage <= .94)) && right >= left && bottom >= top;
+  return {corners, backgroundMask, left, top, right, bottom, coverage, reliable};
+}
 const smartSourceCache = new WeakMap();
 function createSmartPreparation(source, safeArea, templateKey = '') {
   const sourceSize = imageSourceSize(source);
@@ -552,63 +656,9 @@ function createSmartPreparation(source, safeArea, templateKey = '') {
   const workContext = work.getContext('2d', {willReadFrequently: true});
   workContext.drawImage(source, 0, 0, width, height);
   const original = workContext.getImageData(0, 0, width, height);
-  const sampleSize = Math.max(2, Math.round(Math.min(width, height) * .035));
-  const corners = [
-    cornerAverage(original.data, width, height, 0, 0, sampleSize, sampleSize),
-    cornerAverage(original.data, width, height, width - sampleSize, 0, sampleSize, sampleSize),
-    cornerAverage(original.data, width, height, 0, height - sampleSize, sampleSize, sampleSize),
-    cornerAverage(original.data, width, height, width - sampleSize, height - sampleSize, sampleSize, sampleSize)
-  ];
-  const colorDifference = (offset, expected) => Math.abs(original.data[offset] - expected[0]) + Math.abs(original.data[offset + 1] - expected[1]) + Math.abs(original.data[offset + 2] - expected[2]);
-  const borderDifferences = [];
-  const borderStep = Math.max(1, Math.round(Math.min(width, height) / 220));
-  const collectBorderDifference = (x, y) => {
-    const expected = interpolatedBackgroundColor(corners, width > 1 ? x / (width - 1) : 0, height > 1 ? y / (height - 1) : 0);
-    borderDifferences.push(colorDifference((y * width + x) * 4, expected));
-  };
-  for (let x = 0; x < width; x += borderStep) { collectBorderDifference(x, 0); collectBorderDifference(x, height - 1); }
-  for (let y = 0; y < height; y += borderStep) { collectBorderDifference(0, y); collectBorderDifference(width - 1, y); }
-  borderDifferences.sort((a, b) => a - b);
-  const borderPercentile = borderDifferences[Math.floor(borderDifferences.length * .78)] || 0;
-  const threshold = clampNumber(borderPercentile + 30, 58, 135);
-  const candidate = new Uint8Array(width * height);
-  for (let y = 0; y < height; y += 1) {
-    const yRatio = height > 1 ? y / (height - 1) : 0;
-    for (let x = 0; x < width; x += 1) {
-      const pixelIndex = y * width + x, offset = pixelIndex * 4;
-      if (original.data[offset + 3] < 12) { candidate[pixelIndex] = 1; continue; }
-      const expected = interpolatedBackgroundColor(corners, width > 1 ? x / (width - 1) : 0, yRatio);
-      if (colorDifference(offset, expected) <= threshold) candidate[pixelIndex] = 1;
-    }
-  }
-  const backgroundMask = new Uint8Array(width * height);
-  const queue = new Int32Array(width * height);
-  let queueStart = 0, queueEnd = 0;
-  const enqueue = (index) => {
-    if (index < 0 || index >= candidate.length || backgroundMask[index] || !candidate[index]) return;
-    backgroundMask[index] = 1; queue[queueEnd] = index; queueEnd += 1;
-  };
-  for (let x = 0; x < width; x += 1) { enqueue(x); enqueue((height - 1) * width + x); }
-  for (let y = 1; y < height - 1; y += 1) { enqueue(y * width); enqueue(y * width + width - 1); }
-  while (queueStart < queueEnd) {
-    const index = queue[queueStart]; queueStart += 1;
-    const x = index % width;
-    if (x > 0) enqueue(index - 1);
-    if (x + 1 < width) enqueue(index + 1);
-    if (index >= width) enqueue(index - width);
-    if (index + width < candidate.length) enqueue(index + width);
-  }
-  let left = width, top = height, right = -1, bottom = -1, foregroundCount = 0, opaqueCount = 0;
-  for (let index = 0; index < backgroundMask.length; index += 1) {
-    const alpha = original.data[index * 4 + 3];
-    if (alpha >= 12) opaqueCount += 1;
-    if (backgroundMask[index] || alpha < 12) continue;
-    foregroundCount += 1;
-    const x = index % width, y = Math.floor(index / width);
-    left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
-  }
-  const coverage = foregroundCount / Math.max(1, opaqueCount);
-  const reliable = foregroundCount > 0 && coverage >= .01 && coverage <= .94 && right >= left && bottom >= top;
+  const analysis = analyzeProductBackground(original, {conservative: false});
+  const {corners, backgroundMask, coverage, reliable} = analysis;
+  let {left, top, right, bottom} = analysis;
   let foreground = document.createElement('canvas'); foreground.width = width; foreground.height = height;
   const foregroundContext = foreground.getContext('2d');
   const foregroundPixels = foregroundContext.createImageData(width, height);
