@@ -86,9 +86,9 @@ const os = require('node:os');
     const beforeView = await page.evaluate(() => ({key:historyKey(readHistoryState()),undo:undoStack.length,selected:[...selectedLayerIds]}));
     await page.getByRole('button', {name:'Grid View', exact:true}).click();
     await page.waitForFunction(() => workspacePreviewCache.size === 3 && !pendingWorkspacePreviews.size);
-    check('Grid keeps downloads on the left and the view switch at the bottom-right', await page.evaluate(() => {
+    check('Grid hides the sidebar while retaining floating export and view controls', await page.evaluate(() => {
       const side = document.querySelector('.editor-sidebar').getBoundingClientRect(), downloads = exportActions.getBoundingClientRect(), grid = batchGridView.getBoundingClientRect(), controls = viewSwitch.getBoundingClientRect();
-      return side.width > 0 && exportActions.parentElement.classList.contains('editor-sidebar') && downloads.bottom <= side.bottom && side.bottom-downloads.bottom < 25
+      return side.width === 0 && exportActions.parentElement === workspace && downloads.width > 0 && downloads.bottom <= grid.bottom && grid.bottom-downloads.bottom < 25 && downloads.right < controls.left
         && viewSwitch.parentElement === batchGridView && grid.right-controls.right >= 10 && grid.right-controls.right < 15 && grid.bottom-controls.bottom >= 10 && grid.bottom-controls.bottom < 15 && imageDrag === null;
     }));
     check('Grid displays larger current compositions', await page.locator('.batch-grid-card').count() === 3 && (await page.locator('.grid-select').first().boundingBox()).width > 200);
@@ -155,6 +155,7 @@ const os = require('node:os');
     await page.locator('#text-content').scrollIntoViewIfNeeded();
     await page.screenshot({path:path.join(os.tmpdir(),'photo-studio-text.png')});
     // Inspect a real download: the ZIP entry contains the composited text pixels.
+    await page.getByRole('button',{name:'Grid View',exact:true}).click();
     await page.locator('#export-format').selectOption('png');
     const downloadPromise=page.waitForEvent('download'); await page.locator('#export-all').click();
     const download=await downloadPromise;
@@ -177,6 +178,9 @@ const os = require('node:os');
     await page.waitForFunction(()=>document.querySelectorAll('.batch-grid-card').length===files.length);
     const largeLayout=await page.evaluate(()=>({gridScroll:batchGrid.scrollHeight,gridHeight:batchGrid.clientHeight,body:document.documentElement.scrollHeight,viewport:innerHeight,gridRows:getComputedStyle(workspace).gridTemplateRows,gridView:batchGridView.getBoundingClientRect().toJSON()}));
     check('Large batches scroll inside the grid without growing the page',largeLayout.gridScroll>largeLayout.gridHeight && largeLayout.body===largeLayout.viewport);
+    const gridDownloadBottom = await page.locator('.editor-actions').evaluate(el=>el.getBoundingClientRect().bottom);
+    await page.locator('.batch-grid').evaluate(el=>el.scrollTop=el.scrollHeight);
+    check('Scrolling the grid keeps both downloads and the format selector visible', await page.locator('.editor-actions').evaluate(el=>el.getBoundingClientRect().bottom) === gridDownloadBottom && await page.locator('#export-one').isVisible() && await page.locator('#export-all').isVisible() && await page.locator('#export-format').isVisible());
     await page.getByRole('button',{name:'Full Screen View',exact:true}).click();
     check('Full Screen View retains a separately scrolling image list',await page.evaluate(()=>thumbList.scrollHeight>thumbList.clientHeight && document.documentElement.scrollHeight===innerHeight));
     const downloadBottom = await page.locator('.editor-actions').evaluate(el=>el.getBoundingClientRect().bottom);
@@ -186,7 +190,13 @@ const os = require('node:os');
     check('Smaller desktop keeps layers and section controls reachable',await page.locator('.sidebar-sections').evaluate(el=>el.clientHeight>100));
     await page.setViewportSize({width:390,height:844});
     check('Mobile does not create horizontal document overflow', await page.evaluate(()=>document.documentElement.scrollWidth===innerWidth));
-    check('Narrow screens retain one header line and accessible left-side downloads', await page.evaluate(() => siteHeader.offsetHeight === 68 && exportActions.getBoundingClientRect().bottom <= innerHeight && document.querySelector('.editor-sidebar').getBoundingClientRect().width > 0));
+    check('Narrow screens retain one header line and pinned downloads', await page.evaluate(() => siteHeader.offsetHeight === 68 && exportActions.getBoundingClientRect().bottom <= innerHeight && getComputedStyle(exportActions).position === 'fixed'));
+    await page.getByRole('button',{name:'Grid View',exact:true}).click();
+    await page.locator('.editor-workspace').evaluate(el=>el.scrollTop=el.scrollHeight);
+    check('Mobile Grid hides the sidebar but keeps exports on screen while tools scroll', await page.evaluate(() => {
+      const bounds=exportActions.getBoundingClientRect();
+      return document.querySelector('.editor-sidebar').getBoundingClientRect().width===0 && bounds.left>=0 && bounds.right<=innerWidth && bounds.top>0 && bounds.bottom<=innerHeight;
+    }));
     check('No uncaught browser errors',errors.length===0);
     console.log(JSON.stringify({passed:checks.length,checks,errors},null,2));
   } catch(error) { await page.screenshot({path:path.join(os.tmpdir(),'photo-studio-test-failure.png')}); console.error(JSON.stringify({passed:checks,errors})); throw error; }

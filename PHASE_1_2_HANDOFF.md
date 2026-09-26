@@ -6,7 +6,7 @@
 
 ## September 26 workspace extension
 
-The [workspace update handoff](WORKSPACE_UPDATE_HANDOFF.md) documents the completed Full Screen/Grid views, fixed Layers with expandable tools, account watermark templates below the account list, and editable text layers. It includes the pre-update Git checkpoint, implementation details, the initial 220 passing browser checks, and the revised 53-check workspace suite. The revised layout separates Image Size/Shadow, puts Resize below Image Size, moves icon-only view controls to the image corner, and keeps downloads at the left-side bottom with a single-line header. The Phase 1.2 Listing and background preparation behavior below remains in place; composed/generated images now also preserve text layers.
+The [workspace update handoff](WORKSPACE_UPDATE_HANDOFF.md) documents the completed Full Screen/Grid views, fixed Layers with expandable tools, account watermark templates below the account list, and editable text layers. It includes the pre-update Git checkpoint, implementation details, the initial 220 passing browser checks, and the revised 55-check workspace suite. The revised layout separates Image Size/Shadow, puts Resize below Image Size, moves icon-only view controls to the image corner, and pins downloads and format in a floating workspace dock while Grid View hides the left sidebar; the header stays on one line. The Phase 1.2 Listing and background preparation behavior below remains in place; composed/generated images now also preserve text layers.
 
 ## What Phase 1.2 adds
 
@@ -22,9 +22,9 @@ The workflow now:
 6. Scales the product proportionally to fit inside the safe band.
 7. Centers the product horizontally and vertically inside that band.
 8. Draws the selected watermark at 100% configured opacity.
-9. Returns prepared images to the editor for review and export as JPG, PNG, or WebP using the individual or Export Batch controls at the bottom of the left sidebar.
+9. Returns prepared images to the editor for review and export as JPG, PNG, or WebP using the individual or Export Batch controls in the floating workspace export dock.
 
-The Listing dialog uses a single blue (`#007aff`) **Apply Workflow** button. Apply the workflow first, review any manual adjustments in the editor, then export from the bottom of the left sidebar.
+The Listing dialog uses a single blue (`#007aff`) **Apply Workflow** button. Apply the workflow first, review any manual adjustments in the editor, then export from the floating workspace dock.
 
 **DSA eBay:** material selection is hidden and disabled for this account. Its `DSA Seat Factory - eBay` template is selected directly for Main, Passenger Side and Normal roles, and the plan can become ready with no material selected. The account question expands to the available width, the template manager works without a material, and reopening Listing focuses a visible control. Returning to another account restores the material question and its previous value. This behavior also restores correctly through Undo/Redo. DSA does not plan or create automatic DT/DB unmain copies, including from CPIS main roles; it does not delete already uploaded or previously generated images. A batch whose images are all assigned to DSA exports directly into `DSA eBay.zip` without directories. Close View protections and explicit CPIS template overrides continue to apply.
 

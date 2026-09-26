@@ -40,6 +40,10 @@ viewSwitch.addEventListener('wheel', event => event.stopPropagation());
 canvasWrap.append(viewSwitch);
 const siteHeader = document.querySelector('.site-header');
 const exportActions = document.querySelector('.editor-actions'); exportActions.prepend(headerExportControl);
+exportActions.classList.add('workspace-export-actions');
+exportActions.setAttribute('role', 'group'); exportActions.setAttribute('aria-label', 'Export images');
+workspace.append(exportActions);
+new ResizeObserver(() => workspace.style.setProperty('--export-dock-height', `${exportActions.offsetHeight}px`)).observe(exportActions);
 new ResizeObserver(() => document.documentElement.style.setProperty('--studio-header-height', `${siteHeader.offsetHeight}px`)).observe(siteHeader);
 
 const batchGridView = document.createElement('section'); batchGridView.className = 'batch-grid-view'; batchGridView.hidden = true;

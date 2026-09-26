@@ -2,7 +2,7 @@
 
 Status: implemented and browser-verified on 2026-09-26, following the user's confirmation to implement now.
 
-Requested: 2026-09-26. Revised after user review to separate size/shadow sections, stack Resize, list accounts vertically, move templates below all accounts, move icon-only view controls to the image corner, restore left-side downloads, and return the header to one line.
+Requested: 2026-09-26. Revised after user review to separate size/shadow sections, stack Resize, list accounts vertically, move templates below all accounts, move icon-only view controls to the image corner, return the header to one line, and pin downloads/format outside the sidebar so Grid View can hide the sidebar.
 
 The first workspace implementation is preserved at [`39121d4`](https://github.com/MoStafaMTP/Photo-Studio/commit/39121d4271b1e61b248e82767832da4606add81b).
 
@@ -17,7 +17,7 @@ Provide a view system inspired by Photoroom's Batch section, with these two mode
 | **Full Screen View** | The current Photo Studio editing view, with the main canvas, left-side images and right-side tools. |
 | **Grid View** | Show the same images from the Left Side as larger previews in a grid layout. |
 
-“Full Screen View” means the existing editor layout. Browser fullscreen is not part of this request. Both views keep the left sidebar and its fixed download controls visible. View switching uses icons with tooltips and accessible names at the canvas bottom-right; in Grid View the same controls stay at the grid area bottom-right. These controls do not handle canvas drag/wheel gestures and are excluded from image exports.
+“Full Screen View” means the existing editor layout. Browser fullscreen is not part of this request. Full Screen View shows the left sidebar; Grid View hides it. Export current, Export Batch and the format selector live in a separate floating dock at the workspace bottom-left and remain visible in both views. View switching uses icons with tooltips and accessible names at the canvas bottom-right; in Grid View the same controls stay at the grid area bottom-right. These controls do not handle canvas drag/wheel gestures and are excluded from image exports.
 
 The view switch must operate on the existing project images. Current edits, layer arrangements, image order, selected images, watermark assignments and Undo/Redo history must survive switching views. Grid previews must show each image's latest rendered composition, including layers, text, background and watermark.
 
@@ -104,21 +104,21 @@ Text must render consistently in the main canvas, left-side thumbnails, grid pre
 
 - `workspace-ui.js` assembles the shared Full Screen/Grid view switch, sidebar sections and responsive header. Grid cards offer select, edit, duplicate and delete actions; double-click also opens an image in Full Screen View. Ctrl/Command multi-selection and existing batch shortcuts share the original selection state.
 - Grid previews use `renderEditorComposition(item)` in `script.js`, the same renderer as the editor and export. A separate cache uses edit-state keys; one dirty image is processed per animation frame, prioritizing the active image. Export, workflow processing and dragging pause preview work. Previews never change active selection or create history steps.
-- `workspace-ui.css` is loaded after the existing stylesheets. Grid rows preserve their content height for large batches; the grid and left-side image list scroll independently. Layers has its own bounded list and stays above the scrolling accordion controls. On narrow mobile screens, the tools stack below the workspace while a compact left sidebar keeps downloads accessible.
+- `workspace-ui.css` is loaded after the existing stylesheets. Grid rows preserve their content height for large batches; the grid and left-side image list scroll independently. Layers has its own bounded list and stays above the scrolling accordion controls. On narrow mobile screens, the tools stack below the workspace. The export dock is fixed to the viewport bottom, remaining accessible while the workspace/tools scroll; Grid View also hides the compact mobile sidebar.
 - `text-layers.js` owns structured `type: 'text'` layer data, canvas text layout/rendering, font readiness and Text Editor controls. A text layer is not permanently rasterized. It uses the shared position/rotation/flip/scale/shadow fields and existing layer bounds, grouping, ordering, history and deletion rules.
 - Duplication, copy/paste, batch duplication and generated unmain copies preserve text data with independent IDs. Image-asset loading and background removal skip text layers. Text can remain as the final layer after deleting the original image layer.
-- The header stays on one line. The export format and both download buttons are outside the scrolling thumbnails at the bottom of the left sidebar, which remains visible in both views. Resize is below Image Size and controls canvas dimensions; Image Size controls the selected layer's percentage scale.
+- The header stays on one line. The export format and both download buttons are a sibling of the canvas/grid, outside the sidebar and its scrolling thumbnails. Desktop grid-cell positioning pins them to the workspace bottom-left; mobile uses fixed viewport positioning. A ResizeObserver measures the dock so Grid View reserves enough bottom space, including when controls wrap. Grid View hides the sidebar and expands into the freed space. Resize is below Image Size and controls canvas dimensions; Image Size controls the selected layer's percentage scale.
 - Personal watermarks still persist in IndexedDB. Uploaded images, text layers, view state and Undo/Redo are session state, consistent with the existing editor; this update does not add project-file persistence across reloads.
 
 Load order is `text-layers.js`, `script.js`, `workspace-ui.js`, then `editor-history.js` after the existing watermark/metadata modules. Text functions are initialized before the renderer, but their controls are assembled after the main editor DOM exists.
 
 ## Validation
 
-The initial workspace implementation passed 220 checks across these six browser suites, with no uncaught browser errors. After the layout revision, the expanded workspace suite passed 53 checks, including header/control geometry, independent size/shadow panels, accounts on separate lines, templates below all accounts, fixed downloads in both views, and view-control gesture isolation. Other suite results below record the initial workspace baseline:
+The initial workspace implementation passed 220 checks across these six browser suites, with no uncaught browser errors. After the layout revision, the expanded workspace suite passed 55 checks, including header/control geometry, independent size/shadow panels, accounts on separate lines, templates below all accounts, floating downloads/format in both views, Grid View sidebar hiding, desktop/mobile scroll visibility, an actual Grid View ZIP download, and view-control gesture isolation. Other suite results below record the initial workspace baseline:
 
 | Suite | Checks | Coverage |
 | --- | ---: | --- |
-| `tests/workspace-text.browser.cjs` | 53 | Real view/account/text UI interactions, shared selection, keyboard navigation, granular text history, group transforms, text/whole-image copies, image-only background removal, workflow/unmain text preservation, font failure fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
+| `tests/workspace-text.browser.cjs` | 55 | Real view/account/text UI interactions, shared selection, keyboard navigation, granular text history, group transforms, text/whole-image copies, image-only background removal, workflow/unmain text preservation, font failure fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
 | `tests/editor-history.browser.cjs` | 59 | Existing whole-session history and all editing paths. |
 | `tests/layer-layout.browser.cjs` | 30 | Exact duplicate sizes and preserving compositions across account/template changes. |
 | `tests/listing-unmain.browser.cjs` | 39 | Template mapping, generated copies, metadata and real downloads. |
@@ -137,7 +137,7 @@ Screenshots were inspected at 1600 × 1000, including Grid View and text editing
 - [x] Resize is below Image Size, and Shadow has its own section with all controls preserved.
 - [x] Each account has its own line; its templates expand below all accounts.
 - [x] Icon-only view controls sit at the canvas/grid bottom-right without affecting image gestures.
-- [x] Downloads stay fixed at the left-side bottom and the header remains one line.
+- [x] Downloads and export format stay visible in a floating dock when Grid View hides the sidebar; the header remains one line.
 - [x] Text can be added, edited, styled and manipulated as a true layer.
 - [x] Text input shortcuts do not accidentally trigger destructive layer actions.
 - [x] Text, fonts and styling match across previews and all export formats.
