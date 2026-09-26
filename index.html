@@ -23,8 +23,8 @@
         <div class="editor-shell">
           <aside class="editor-sidebar">
             <div class="editor-sidebar-title"><strong>New project</strong><span id="image-count">0 images</span></div>
-            <label class="upload-drop" for="image-input"><span class="upload-icon small">↑</span><strong>Upload images</strong><small>JPG, PNG or WEBP · multiple files</small></label>
-            <input id="image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
+            <label class="upload-drop" for="image-input"><span class="upload-icon small">↑</span><strong>Upload images</strong><small>JPG, PNG, WEBP, CR2 or CR3</small></label>
+            <input id="image-input" type="file" accept="image/jpeg,image/png,image/webp,.cr2,.cr3,image/x-canon-cr2,image/x-canon-cr3" multiple hidden />
             <div class="thumb-list" id="thumb-list"><div class="empty-state">Your uploaded images<br>will appear here.</div></div>
             <div class="editor-actions"><button class="editor-button secondary" id="export-one" disabled>Export current <span>↓</span></button><button class="editor-button primary" id="export-all" disabled>Export Batch <span>↓</span></button></div>
           </aside>
@@ -96,6 +96,7 @@
     <script src="watermark-safe-areas.js"></script>
     <script src="listing-metadata.js"></script>
     <script src="text-layers.js"></script>
+    <script src="image-import.js"></script>
     <script src="background-removal.js"></script>
     <script src="script.js"></script>
     <script src="workspace-ui.js"></script>

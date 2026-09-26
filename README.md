@@ -44,7 +44,7 @@ Implemented on September 26, 2026: Full Screen/Grid views, an icon sidebar besid
 
 ### Editing
 
-- Upload one or many JPG, PNG, or WebP images.
+- Upload one or many JPG, PNG, WebP, Canon CR2 or CR3 images, including mixed batches and Layers drag-and-drop. RAW photos are developed locally at full resolution for the same editing, background removal and export tools; see [RAW image import](RAW_IMAGE_IMPORT.md).
 - 1576 × 1576 default output canvas.
 - Resize, rotate in 15-degree steps, and flip horizontally or vertically.
 - Drag layers with optional Shift axis locking.
@@ -142,6 +142,10 @@ Then open <http://localhost:8000/>.
 | --- | --- |
 | `index.html` | Application shell and Listing interface. |
 | `script.js` | Editor, layers, watermark library, smart preparation, and export logic. |
+| `image-import.js` | Local Canon RAW decoding, import progress/cancellation and reusable decoded source cache. |
+| `vendor/libraw/` | Bundled LibRaw WASM runtime, corresponding-source notice and licenses. |
+| `scripts/build-raw-decoder.cjs` | Regenerate the pinned, integrity-checked RAW decoder bundle. |
+| `RAW_IMAGE_IMPORT.md` | CR2/CR3 import behavior, deployment and real-file validation. |
 | `background-removal.js` | Local AI inference worker, model download/cache and source-resolution edge matting. |
 | `AI_BACKGROUND_REMOVAL.md` | Background-removal behavior, dependencies/licenses, privacy, deployment and validation. |
 | `editor-history.js` | Whole-session edit history, state restoration and saved-watermark undo persistence. |
@@ -178,6 +182,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. They are exempt from safe-area fitting and the 50px inset so that their original size and background are preserved. A source larger than the output canvas can extend beyond its edges; increase the output dimensions when needed. Manual enlargement is available, but shrinking below 100% and background removal are blocked for Close View sources and their layer/batch copies.
 
 ## Validation
+
+Canon RAW support passed 24 focused checks using real CR2/CR3 files, including four checks with actual AI background removal and restoration. Offline decoding, drag-and-drop, orientation, canceled/damaged imports, CPIS, duplicate layers, generated unmain copies and all three export formats are covered in [RAW_IMAGE_IMPORT.md](RAW_IMAGE_IMPORT.md).
 
 The AI update was tested with real inference on two supplied seat-cover photos, inspected as transparent PNGs and against a dark background. Editor/geometry regression suites use deterministic masks and await async removal; their heuristic pixel tests describe the legacy helper and unchanged Listing analysis, not neural accuracy. See [AI background removal validation](AI_BACKGROUND_REMOVAL.md#validation).
 

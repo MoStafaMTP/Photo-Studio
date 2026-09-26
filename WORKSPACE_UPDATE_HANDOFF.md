@@ -161,3 +161,7 @@ Screenshots were inspected at 1600 × 1000, including Grid View and text editing
 - [x] Existing background, Listing, watermark, selection, duplication and history regressions pass.
 
 The pre-update Git checkpoint remains available for comparison or restoration; historical Phase 1/1.1 archives are unchanged.
+
+## Canon RAW upload update — September 27, 2026
+
+Main upload, canvas drop, Layers upload/drop and CPIS imports now accept CR2/CR3. Local full-resolution decoding feeds the existing previews, editing tools, Remove BG toggle, duplication, history and exports while preserving original filenames. The progress dialog supports cancellation and identifies decoding failures. Existing sizing and default-background behavior are unchanged. [RAW_IMAGE_IMPORT.md](RAW_IMAGE_IMPORT.md) records implementation, dependencies and the 24 real-file checks, including actual AI removal/restoration for both formats.

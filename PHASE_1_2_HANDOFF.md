@@ -241,3 +241,7 @@ The `Ctrl + B` background toggle passed 6 focused browser checks covering mixed 
 | `PHASE_1_2_HANDOFF.md` | This implementation handoff. |
 
 Phase 1.2 does not alter the Phase 1 or Phase 1.1 ZIP archives or their checksum sidecars.
+
+## Canon RAW sources — September 27, 2026
+
+CR2 and CR3 uploads now develop locally to full-resolution sRGB pixels before entering the editor or Listing workflow. Original File objects/names and CPIS metadata remain authoritative; generated unmain copies reuse decoded assets. Manual background removal/restoration works on RAW photos with unchanged layer geometry. Default background retention, automatic sizing, Close View rules and export folder routing remain unchanged. See [RAW_IMAGE_IMPORT.md](RAW_IMAGE_IMPORT.md) for the complete handoff and validation.

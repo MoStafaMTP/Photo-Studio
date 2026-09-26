@@ -149,3 +149,4 @@ button:focus-visible,summary:focus-visible,.text-settings input:focus-visible,.t
 .background-progress-count { color: #636366; font-size: 12px; }
 .background-progress button { width: 100%; margin-top: 12px; padding: 11px 16px; border: 0; border-radius: 10px; background: #f2f2f7; color: #007aff; font: inherit; font-weight: 600; cursor: pointer; }
 .background-progress button:focus-visible { outline: 2px solid #007aff; outline-offset: 3px; }
+.raw-import-name { overflow-wrap: anywhere; font-weight: 600; }

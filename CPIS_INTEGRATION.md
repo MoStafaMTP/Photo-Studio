@@ -82,7 +82,7 @@ if (plan.ready) await PhotoStudioIntegration.applyWorkflow();
 const manifest = PhotoStudioIntegration.getMetadata();
 ```
 
-- `importImages(payload, imageFiles)` validates metadata and file matching before adding a new batch, waits for decoding, and opens the Listing review. It rejects a non-empty editor so existing work is not replaced. Failed images remain visible for replacement/removal and cannot be processed.
+- `importImages(payload, imageFiles)` validates metadata and file matching before adding a new batch, waits for decoding, and opens the Listing review. It rejects a non-empty editor so existing work is not replaced. Canon CR2/CR3 sources are decoded before committing files or context; RAW errors/cancellation reject the Promise without adding the batch. Ordinary raster decode failures remain visible for replacement/removal and cannot be processed.
 - `setMetadata(payload)` synchronously validates and annotates the entire current batch, then opens the review. It does not process images or alter existing pixel edits/watermarks until Apply Workflow is invoked.
 - `getPlan()` returns `{ready, account, material, color, images}`. Each image includes `imageId`, optional CPIS `id`, filename, variation, subtype, kind, source (`metadata`/`filename`/`generated`), templateName, closeView, and error. Planned DT/DB copies also appear before processing with `pendingGeneration: true` and a `generatedFromImageId` link. After Apply Workflow they become ordinary editable images and pendingGeneration is false.
 - `getMetadata()` returns the current manifest plus stable editor `imageId` values, or null in filename mode. Optional per-image CPIS `id` and `templateName` values are retained.
@@ -90,6 +90,8 @@ const manifest = PhotoStudioIntegration.getMetadata();
 - `clearMetadata()` explicitly returns the batch to local filename detection and unlocks the account/material selectors. Existing edits remain until the workflow is applied again.
 
 The payload must cover every uploaded image exactly once. Initial matching uses the original File.name, case-sensitively; filenames are identity keys here, not classification hints. If original filenames repeat, include each editor `imageId` to disambiguate. The filename and imageId must agree. An optional CPIS `id` is a preserved source identifier, not a matching key, and may be shared by an editor duplicate and its source.
+
+Image Files can be JPG, PNG, WebP, CR2 or CR3. Canon RAW files are recognized by extension even when the host provides an empty or `application/octet-stream` MIME type. Use the original RAW filename in metadata (for example `DT.CR3`); local decoding does not rename it or override resolved variation/subtype values. Copies and generated unmain outputs reuse the developed pixels. The output format still determines the exported raster extension. See [RAW_IMAGE_IMPORT.md](RAW_IMAGE_IMPORT.md).
 
 Locally generated unmain copies do not have to be included when CPIS resends metadata for its original uploads. Missing generated entries inherit the source's resolved variation and retain subtype `unmain`. `getMetadata()` includes the generated images with their actual filenames and editor IDs so a complete manifest can also be round-tripped.
 

@@ -118,7 +118,7 @@ layerGroup.innerHTML = `
     <button type="button" data-layer-action="remove"></button>
   </div>
   <div class="layer-drop-zone" role="button" tabindex="0"><span>↓</span><strong>Drop images here</strong></div>
-  <input class="layer-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+  <input class="layer-image-input" type="file" accept="image/png,image/jpeg,image/webp,.cr2,.cr3,image/x-canon-cr2,image/x-canon-cr3" multiple hidden>
   <div class="layer-list"></div>`;
 backgroundGroup.after(layerGroup);
 const layerImageInput = layerGroup.querySelector('.layer-image-input');
@@ -247,10 +247,11 @@ window.addEventListener('keyup', (event) => { if (event.key.startsWith('Arrow'))
 const setStatus = (message) => { status.textContent = message; };
 
 function addImages(fileList, {metadataByFile = null} = {}) {
-  const accepted = [...fileList].filter((file) => file.type.startsWith('image/'));
+  // Canon RAW files are decoded by importImages before this synchronous commit.
+  const accepted = [...fileList].filter(PhotoStudioImageInput.supports);
   const added = [];
   accepted.forEach((file) => {
-    const item = { id: createBatchImageId(), file, displayName: file.name, url: URL.createObjectURL(file), image: new Image(), rotation: 0, mirror: false, flipY: false, offsetX: 0, offsetY: 0, scale: 100, fit: fitSelect.value, removeBg: false, processed: null, smartPrep: null, shadow: false, shadowAngle: 90, shadowDistance: 18, shadowStrength: 80, layers: [], layerOrder: ['base'], baseRemoved: false, watermarkImage: null, watermarkEnabled: false, watermarkOpacity: 100, watermarkSection: null, watermarkTemplateId: null };
+    const item = { id: createBatchImageId(), file, displayName: file.name, url: URL.createObjectURL(PhotoStudioImageInput.source(file)), image: new Image(), rotation: 0, mirror: false, flipY: false, offsetX: 0, offsetY: 0, scale: 100, fit: fitSelect.value, removeBg: false, processed: null, smartPrep: null, shadow: false, shadowAngle: 90, shadowDistance: 18, shadowStrength: 80, layers: [], layerOrder: ['base'], baseRemoved: false, watermarkImage: null, watermarkEnabled: false, watermarkOpacity: 100, watermarkSection: null, watermarkTemplateId: null };
     if (metadataByFile?.has(file)) item.listingMetadata = metadataByFile.get(file);
     item.image.onload = () => { if (activeIndex === -1) selectImage(0); else if (files[activeIndex] === item) drawActive(); refreshListingPreview(); if (typeof requestWorkspaceRefresh === 'function') requestWorkspaceRefresh(); };
     item.image.onerror = () => { setStatus(`${file.name} could not be loaded.`); refreshListingPreview(); };
@@ -266,10 +267,22 @@ function addImages(fileList, {metadataByFile = null} = {}) {
   }
   return added;
 }
-input.addEventListener('change', (event) => addImages(event.target.files));
+function reportImportIssues(result) {
+  if (result.canceled) setStatus('Image import canceled. No images were added.');
+  else if (result.errors.length) setStatus(`${result.files.length} image${result.files.length === 1 ? '' : 's'} loaded. Could not load: ${result.errors.map(error => `${error.name} (${error.reason})`).join('; ')}`);
+}
+async function importImages(fileList, options) {
+  if (backgroundRemovalBusy || listingBusy) { setStatus('Wait for the current image processing to finish.'); return []; }
+  try {
+    const result = await PhotoStudioImageInput.prepare([...fileList]);
+    const added = result.canceled ? [] : withHistoryActionSync(() => addImages(result.files, options));
+    reportImportIssues(result); return added;
+  } catch (error) { setStatus(`Image import failed: ${error.message}`); return []; }
+}
+input.addEventListener('change', async () => { const incoming = [...input.files]; input.value = ''; await importImages(incoming); });
 canvasWrap.addEventListener('dragover', (event) => { event.preventDefault(); canvasWrap.classList.add('dragging'); });
 canvasWrap.addEventListener('dragleave', () => canvasWrap.classList.remove('dragging'));
-canvasWrap.addEventListener('drop', (event) => { event.preventDefault(); canvasWrap.classList.remove('dragging'); addImages(event.dataTransfer.files); });
+canvasWrap.addEventListener('drop', (event) => { event.preventDefault(); canvasWrap.classList.remove('dragging'); importImages(event.dataTransfer.files); });
 
 const thumbnailCanvas = document.createElement('canvas');
 const thumbnailContext = thumbnailCanvas.getContext('2d');
@@ -368,9 +381,10 @@ function duplicateDisplayName(name) {
   const match = name.match(/^(.*?)(\.[^.]*)?$/);
   return `${match?.[1] || name} copy${match?.[2] || ''}`;
 }
-function loadDuplicateAsset(file) {
+async function loadDuplicateAsset(file) {
+  const blob = await PhotoStudioImageInput.decode(file);
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file), image = new Image();
+    const url = URL.createObjectURL(blob), image = new Image();
     image.onload = () => resolve({url, image});
     image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image copy failed')); };
     image.src = url;
@@ -1471,15 +1485,19 @@ function renderLayerList() {
 function createLayerId() { return globalThis.crypto?.randomUUID?.() || `layer-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 async function addLayerImages(fileList) {
   const item = files[activeIndex]; if (!item) { setStatus('Upload a main image before adding layers.'); return; }
-  const accepted = [...fileList].filter((file) => file.type.startsWith('image/'));
-  if (!accepted.length) return;
+  if (backgroundRemovalBusy || listingBusy) { setStatus('Wait for the current image processing to finish.'); return; }
+  let result;
+  try { result = await PhotoStudioImageInput.prepare([...fileList]); }
+  catch (error) { setStatus(`Image import failed: ${error.message}`); return; }
+  const accepted = result.files;
+  if (!accepted.length || result.canceled) { reportImportIssues(result); return; }
   saveHistory();
-  const loadedLayers = await Promise.all(accepted.map((file, index) => new Promise((resolve) => {
-    const url = URL.createObjectURL(file), image = new Image();
-    image.onload = () => resolve({id: createLayerId(), file, name: file.name, url, image, x: canvas.width / 2 + (index - (accepted.length - 1) / 2) * 45, y: canvas.height / 2 + index * 18, scale: 100, fit: 'contain', rotation: 0, mirror: false, flipY: false, removeBg: false, processed: null, shadow: false, shadowAngle: 90, shadowDistance: 18, shadowStrength: 80});
-    image.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
-    image.src = url;
-  })));
+  const loadedLayers = await Promise.all(accepted.map(async (file, index) => {
+    try {
+      const asset = await loadDuplicateAsset(file);
+      return {id: createLayerId(), file, name: file.name, ...asset, x: canvas.width / 2 + (index - (accepted.length - 1) / 2) * 45, y: canvas.height / 2 + index * 18, scale: 100, fit: 'contain', rotation: 0, mirror: false, flipY: false, removeBg: false, processed: null, shadow: false, shadowAngle: 90, shadowDistance: 18, shadowStrength: 80};
+    } catch (error) { result.errors.push({name: file.name, reason: error.message}); return null; }
+  }));
   const validLayers = loadedLayers.filter(Boolean);
   if (!files.includes(item)) {
     validLayers.forEach(layer => URL.revokeObjectURL(layer.url));
@@ -1492,6 +1510,7 @@ async function addLayerImages(fileList) {
     renderLayerList(); syncSelectedLayerControls(); drawActive();
   }
   setStatus(`${validLayers.length} image layer${validLayers.length === 1 ? '' : 's'} added.`);
+  reportImportIssues({...result, files: validLayers});
   checkpointHistory();
 }
 layerAddButton.addEventListener('click', () => {
@@ -1598,7 +1617,7 @@ removeBgButton.addEventListener('click', () => {
   toggleSelectedLayerBackgrounds();
 });
 async function toggleSelectedLayerBackgrounds() {
-  if (backgroundRemovalBusy || listingBusy || exporting) return false;
+  if (backgroundRemovalBusy || PhotoStudioImageInput.busy || listingBusy || exporting) return false;
   const item = files[activeIndex], selected = getBackgroundTargetEntities(item);
   if (!selected.length) { setStatus('Select one or more layers first.'); return false; }
   const eligible = selected.filter((entity) => !isTextLayer(entity.data) && !isCloseViewImage(entity.data));
@@ -1620,7 +1639,7 @@ async function prepareManualCutout(layer, options) {
   return cutout;
 }
 async function applyLayerBackgrounds(layers, remove) {
-  if (backgroundRemovalBusy || listingBusy || exporting || !layers.length) return false;
+  if (backgroundRemovalBusy || PhotoStudioImageInput.busy || listingBusy || exporting || !layers.length) return false;
   const apply = (cutouts = []) => withHistoryActionSync(() => {
     saveHistory();
     layers.forEach((layer, index) => {
@@ -2186,7 +2205,7 @@ function syncCPISMetadataControls() {
     : 'Local uploads use filename detection.';
 }
 function prepareCPISMetadata(payload, items) {
-  if (listingBusy || backgroundRemovalBusy) throw new Error('Wait for the current image processing to finish.');
+  if (listingBusy || backgroundRemovalBusy || PhotoStudioImageInput.busy) throw new Error('Wait for the current image processing to finish.');
   const normalized = PhotoStudioMetadata.normalizePayload(payload);
   const account = normalized.account.toLowerCase();
   const sectionIndex = watermarkSections.findIndex((section, index) =>
@@ -2237,13 +2256,17 @@ async function importCPISImages(payload, imageFiles) {
   return withHistoryAction(() => importCPISImagesInternal(payload, imageFiles));
 }
 async function importCPISImagesInternal(payload, imageFiles) {
+  if (listingBusy || backgroundRemovalBusy || PhotoStudioImageInput.busy) throw new Error('Wait for the current image processing to finish.');
   if (files.length) throw new Error('CPIS: importImages needs an empty editor. Use setMetadata for images already uploaded.');
   const incoming = Array.from(imageFiles || []);
-  if (!incoming.length || incoming.some(file => !file?.type?.startsWith('image/') || typeof file.arrayBuffer !== 'function')) {
+  if (!incoming.length || incoming.some(file => !PhotoStudioImageInput.supports(file))) {
     throw new Error('CPIS: supply the image File objects separately from the metadata.');
   }
   const candidates = incoming.map((file, index) => ({file, id: `incoming-${index}`}));
   const {context, bindings} = prepareCPISMetadata(payload, candidates);
+  const prepared = await PhotoStudioImageInput.prepare(incoming);
+  if (prepared.canceled) throw new Error('CPIS: image import canceled.');
+  if (prepared.errors.length) throw new Error(`CPIS: ${prepared.errors.map(error => `${error.name}: ${error.reason}`).join('; ')}`);
   commitCPISContext(context);
   const metadataByFile = new Map(bindings.map(({item, metadata}) => [item.file, metadata]));
   const added = addImages(incoming, {metadataByFile});
@@ -2257,7 +2280,7 @@ function clearCPISMetadata() {
   return withHistoryActionSync(clearCPISMetadataInternal);
 }
 function clearCPISMetadataInternal() {
-  if (listingBusy || backgroundRemovalBusy) throw new Error('Wait for the current image processing to finish.');
+  if (listingBusy || backgroundRemovalBusy || PhotoStudioImageInput.busy) throw new Error('Wait for the current image processing to finish.');
   cpisListingContext = null;
   files.forEach(item => { delete item.listingMetadata; });
   renderListingPreview(); setStatus('Filename detection enabled for this batch.');
@@ -2317,6 +2340,7 @@ function releaseGeneratedImageAssets(item) {
 async function materializeUnmainRow(row) {
   const source = row.generatedFrom;
   const file = new File([source.file], row.item.displayName, {type: source.file.type, lastModified: source.file.lastModified});
+  PhotoStudioImageInput.inherit(source.file, file);
   const loaded = [];
   try {
     const baseAsset = await loadDuplicateAsset(file); loaded.push(baseAsset);
@@ -2334,7 +2358,7 @@ async function materializeUnmainRow(row) {
   }
 }
 async function applyListingWatermarks() {
-  if (backgroundRemovalBusy) throw new Error('Wait for background removal to finish.');
+  if (backgroundRemovalBusy || PhotoStudioImageInput.busy) throw new Error('Wait for the current image processing to finish.');
   return withHistoryAction(applyListingWatermarksInternal);
 }
 async function applyListingWatermarksInternal() {
@@ -2436,7 +2460,7 @@ listingAccount.addEventListener('change', renderListingPreview);
 listingMaterial.addEventListener('change', renderListingPreview);
 listingSmartPrep.addEventListener('change', renderListingPreview);
 async function runListingWorkflow() {
-  if (listingBusy || backgroundRemovalBusy) throw new Error('Wait for the current image processing to finish.');
+  if (listingBusy || backgroundRemovalBusy || PhotoStudioImageInput.busy) throw new Error('Wait for the current image processing to finish.');
   setListingBusy(true, 'Applying…');
   try {
     await applyListingWatermarks();
