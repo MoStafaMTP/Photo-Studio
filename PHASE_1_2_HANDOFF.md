@@ -17,10 +17,10 @@ The workflow now:
 1. Uses resolved CPIS image metadata when supplied, with filename detection for standalone uploads.
 2. Resolves the selected account and material watermark.
 3. Uses the supplied template's spacing defaults, or measures a custom watermark's full-width transparent band.
-4. Separates the product from edge-connected background pixels.
-5. Reconstructs the vacated background from the source image's corner and edge colors.
-6. Scales the product proportionally to fit inside the safe band.
-7. Centers the product horizontally and vertically inside that band.
+4. Analyzes product boundaries using the existing foreground detection and safe-area logic.
+5. Retains the original photo and background for rendering; reconstructed source colors fill any surrounding area beyond that transformed photo.
+6. Scales the product proportionally to fit inside the safe band, using exactly the same fitting calculations as before.
+7. Centers the product horizontally and vertically inside that band and draws the original photo at that fitted transform.
 8. Draws the selected watermark at 100% configured opacity.
 9. Returns prepared images to the editor for review and export as JPG, PNG, or WebP using the Export current or Export Batch controls in the header.
 
@@ -44,7 +44,7 @@ Image exports keep the uploaded filename stem with the selected JPG/PNG/WebP ext
 
 **Composition preservation:** Listing labels images containing added layers (including those whose original layer was deleted) as **Keep layout**. Apply Workflow replaces their watermark without resetting transforms, clearing preparation/background edits, or re-fitting only the original layer. A prepared original's current unrotated size and center are retained independently of the template's automatic fit, so Normal header analysis cannot move it when accounts change. Manual Saved Watermark changes use the same preservation rule. Generated unmain compositions inherit the arrangement with independent layer IDs and loaded assets. Existing single-original-layer preparation and Close View rules remain in place; manual compositions are not automatically rearranged to enforce a new template's margins.
 
-The **Smart image preparation** checkbox is enabled by default in Listing. Turning it off only assigns the matched watermarks, while Close View images still restore their original size and background.
+The **Smart image preparation** checkbox is enabled by default in Listing. Automatic preparation keeps original backgrounds visible; Remove BG, Ctrl+B and Remove All BG remain explicit actions. Turning smart preparation off only assigns the matched watermarks, while Close View images still restore their original size and background.
 
 **Close View exception:** CPIS subtype `cv`, or standalone filenames such as `DTcv`, `DOPTcv`, `Close View`, `Close_View`, `Close-View`, or `CloseView` (case-insensitive), use the account's Normal template and bypass product separation, background rebuilding, and automatic fitting, even with smart preparation enabled. Applying the workflow restores the original background and centers the unrotated source at 100% native pixel size. Close Views are exempt from the 50px fitting inset to preserve their native size. Preview, layer bounds, duplication, clipboard and export share this rule. Remove BG, Remove All BG and Ctrl+B skip these sources, including in mixed selections; scale controls cannot shrink them below 100%. Rendering also bypasses stale removal/preparation state. Resolved metadata takes priority over filenames, and layer copies retain their source's Close View classification. The configured output canvas still controls the export dimensions; larger native images can extend past that canvas, and smaller images leave space around them.
 
@@ -94,7 +94,7 @@ Safe-area overrides are stored in IndexedDB database `photo-studio-assets`, obje
 
 ## Smart background separation
 
-The engine runs entirely in the browser and requires no server or external API.
+The engine runs entirely in the browser and requires no server or external API. Foreground analysis remains unchanged because its bounds and silhouette determine the current sizing, safe-area clearance and Normal-template fit. The cached foreground is available for manual background removal; default preview/export uses the actual original source instead of the cutout.
 
 - Product images are analyzed at up to 1600 pixels on their longest side, while the foreground canvas retains original-resolution product pixels. For larger sources, only the detection mask is enlarged; its fractional coverage is retained instead of thresholding it back to black/white, and source transparency is applied once.
 - Four corner regions form a background color model.
@@ -135,7 +135,7 @@ Normal fit results and header masks are cached per preparation/image and invalid
 
 Positioning is calculated at the automatic 100% size, then the user's manual scale and drag offsets are applied. The 50px gap and automatic positioning rules describe automatic placement; deliberate manual adjustments can change them. The manual center action centers the selected layer/group on the canvas, including Normal-template products. Base-layer position updates use the actual current geometry, fixing drift during centering, dragging and group scaling when the automatic center differs from the canvas center.
 
-After preparation, the normal editor controls remain available. The product can be dragged, moved with arrow keys, Shift-dragged on one axis, resized with the Image Size control or mouse wheel, rotated, flipped, centered, and given a per-layer shadow. The reconstructed background remains fixed while those product adjustments are made.
+After preparation, the normal editor controls remain available. The product can be dragged, moved with arrow keys, Shift-dragged on one axis, resized with the Image Size control or mouse wheel, rotated, flipped, centered, and given a per-layer shadow. The original photo and its background follow the product transform by default; any reconstructed fill beyond the transformed source stays fixed.
 
 Mouse-wheel resizing uses smooth 1% steps; holding Shift uses faster 5% steps. Watermark changes apply only to the images selected in the left panel, including a single selected image. `Ctrl + Alt + A` selects every image and immediately applies the active watermark template to the complete selection.
 
@@ -147,7 +147,7 @@ Layer keyboard controls include `Delete` for selected-layer removal, `Ctrl + C` 
 
 Clicking empty space outside the canvas deselects all layers without changing the selected left-side images. Editing controls preserve layer selection, and scrolling over the canvas only resizes selected layers.
 
-Manual **Remove BG** or **Remove All BG** intentionally exits smart preparation for the affected base image and returns it to the manual background-removal workflow. Reset also clears smart preparation from the current image.
+Manual **Remove BG** or **Remove All BG** retains smart preparation and its fitted geometry while showing the cutout. Remove BG or Ctrl+B restores the original photo without re-fitting. Reset clears smart preparation from the current image.
 
 ## Rendering and state
 
@@ -163,7 +163,7 @@ Each prepared batch item receives an in-memory `smartPrep` object containing:
 
 The canvas renderer recognizes this state for preview, thumbnails, individual export, and batch export. Prepared state is copied when a complete left-side batch image is duplicated during the session.
 
-Remove BG retains `smartPrep` and its placement. It hides the reconstructed backdrop while keeping the same fitted foreground. Toggling off sets `originalBackgroundRestored` and draws the actual uploaded source aligned to the fitted product; reconstruction fills only the surrounding area beyond that source. Automatic preparation keeps its existing reconstructed-background default until an explicit restore. Reset/new preparation clears the restore flag. Full-image fallback preparations use manual removal without re-fitting. Prepared copies retain both the cutout and corresponding original-background crop, including when copied in the restored state, so toggles preserve geometry and reuse the exact cutout.
+Automatic preparation sets `removeBg: false` and `originalBackgroundRestored: true`, drawing the actual uploaded source aligned to the fitted product; reconstruction fills only the surrounding area beyond that source. The fitting functions, analysis bounds, Normal-template silhouette checks, scale and offsets are unchanged. Generated unmain items use the same default; existing layered compositions retain their explicit per-layer background choices when changing accounts. Remove BG retains `smartPrep` and its placement, hides the backdrop and original source, and shows the fitted foreground. Toggling off restores the source without a size change. Reset clears preparation, while new preparation restores the original-background default. Full-image fallback preparations use manual removal without re-fitting. Prepared copies retain both the cutout and corresponding original-background crop, so toggles preserve geometry and reuse the exact cutout.
 
 The Remove BG button and Ctrl+B share the same target resolution and toggle. A sole remaining layer is available even after clearing its selection handles; multi-layer compositions require explicit selection. The button exposes `aria-pressed` (including mixed state), a restore tooltip, and remains enabled/blue when removal is on. Numeric inputs allow Ctrl+B, while text editing and the Listing dialog retain their shortcut guards. Remove All BG skips deleted base layers and Close Views. Source images and cached cutouts remain immutable across repeated toggles and history restoration.
 
@@ -174,6 +174,8 @@ History covers layer and batch uploads, duplication and deletion, stacking, size
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+The original-background default passed 191 checks: 30 preparation, 54 Normal-template fit, 31 layer-layout, 17 background-toggle and 59 history checks, with no uncaught browser errors. The preparation suite verifies unchanged geometry in all 1,368 placement cases, original background pixels in exports, generated unmain defaults, manual remove/restore with fixed size, and Close View protection. Layer checks explicitly test both default background-preserving copies and manually removed cutout copies.
 
 `tests/background-toggle.browser.cjs` covers real mouse clicks/keyboard events, active/enabled button state, cleared handles, pixel-identical original-PNG restoration, cached cutouts, numeric-field shortcuts, Undo/Redo, prepared originals, restored duplicates, groups, deleted base layers and Close View protection. It accepts optional local image paths; the user-supplied `9.jpg` and `FullSet.jpg` remain outside the repository.
 
@@ -189,7 +191,7 @@ Tab navigation passed 14 focused browser checks using actual keyboard events: ne
 
 `tests/editor-history.browser.cjs` covers granular and whole-batch history, restoring uploads and deletions with usable image assets, more than 50 movement steps, cross-image Undo/Redo, layers, compound workflow/reset actions, saved-library persistence, explicit metadata actions, real mouse movement and history buttons, numeric keyboard shortcuts, and background-toggle geometry/export pixels.
 
-`tests/layer-layout.browser.cjs` passes 30 checks for exact-sized duplicates, crop/export pixels, high scales and rotated contain/cover layers, shadows and flips, background restoration, clipboard/group copies, repeated account changes, Normal/manual watermark changes, kept layer order/selection, continued editing, deleted original layers, composed unmain outputs, Close View arrangements, and later margin edits.
+`tests/layer-layout.browser.cjs` passes 31 checks for default background-preserving prepared copies, exact-sized duplicates, crop/export pixels, high scales and rotated contain/cover layers, shadows and flips, background restoration, clipboard/group copies, repeated account changes, Normal/manual watermark changes, kept layer order/selection, continued editing, deleted original layers, composed unmain outputs, Close View arrangements, and later margin edits.
 
 The Normal upper-space update passed 54 checks in `tests/normal-template-fit.browser.cjs`: all seven Normal templates, native-pixel checks for at least 50px header clearance at four output sizes, rotation and both flips, wide-product fallback, custom margins, full-width banners, manual edits, Close View preservation and production export. Sample enlargement ranged from 1.8% to 8%; the Elite sample's top whitespace dropped from 229px to 103px. The updated 24-check `tests/listing-preparation.browser.cjs` suite also passed, retaining its 1,368 placement cases and background/export regression coverage with Normal-specific header positioning.
 

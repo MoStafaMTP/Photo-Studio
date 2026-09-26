@@ -22,6 +22,7 @@ const path = require('node:path');
         const source = document.createElement('canvas'); source.width = width; source.height = height;
         const context = source.getContext('2d');
         context.fillStyle = '#bedaf0'; context.fillRect(0, 0, width, height);
+        context.fillStyle = '#b2cee4'; context.fillRect(0, Math.floor(height * .28), width, Math.ceil(height * .04));
         context.fillStyle = '#a00000'; context.fillRect(width * .25, height * .1, width * .5, height * .8);
         return new File([await new Promise(resolve => source.toBlob(resolve))], name, {type: 'image/png'});
       }
@@ -41,6 +42,8 @@ const path = require('node:path');
       await applyListingWatermarks();
       assert('Only non-Close View images and the new DT unmain copy enter automatic background separation', separations === 4 && removals === 0);
       assert('Metadata determines Close View handling before filename fallback', !files[3].smartPrep && files[3].originalSize && files[4].smartPrep && !files[4].originalSize);
+      assert('Apply Workflow keeps original backgrounds for prepared images and generated unmain copies', files.filter(item=>item.smartPrep).every(item=>!item.removeBg && item.originalBackgroundRestored)
+        && files.some(item=>/unmain/i.test(item.displayName) && item.originalBackgroundRestored));
 
       // Normal templates can use the clear upper center; all other templates keep
       // the full-width top inset. Every layout retains bottom/side clearance.
@@ -58,6 +61,8 @@ const path = require('node:path');
               const item = {...base, rotation, watermarkSection: sectionIndex, watermarkTemplateId: template.id, watermarkImage: image,
                 smartPrep: {...base.smartPrep, safeArea}};
               const rect = smartProductGeometry(item);
+              const previousGeometry = smartProductGeometry({...item, originalBackgroundRestored: false});
+              if (!['x','y','width','height','drawWidth','drawHeight'].every(key=>near(rect[key],previousGeometry[key]))) throw Error('Preserving the original background changed the existing fit');
               const normal = template.name === 'Normal';
               const landscape = base.image.naturalWidth > base.image.naturalHeight || rect.width > rect.height;
               if (!rect || !near(rect.x, width / 2) || ((!normal || landscape) && !near(rect.y, (top + bottom) / 2))
@@ -71,9 +76,33 @@ const path = require('node:path');
         }
       }
       assert('All 57 templates preserve side/bottom clearance and horizontal centering, with adaptive Normal headers, across four output sizes and three rotations', placements === 1368);
+      assert('Keeping original backgrounds preserves the prior sizing and positioning in all 1368 placement cases', placements === 1368);
       canvas.width = canvas.height = 1576;
       const legacy = smartSafeRect({safeArea: {canvasWidth: 1500, canvasHeight: 1500, topMargin: 200, bottomMargin: 120, clearance: 0, source: 'custom'}});
       assert('Legacy zero-clearance and custom margins cannot remove the 50px inset', near(legacy.y, 200 / 1500 * 1576 + 50) && near(legacy.height, 1180 / 1500 * 1576 - 100));
+
+      selectImage(0);
+      const backgroundItem=files[0], originalWatermark=backgroundItem.watermarkEnabled;
+      backgroundItem.watermarkEnabled=false; drawActive();
+      const backgroundGeometry=smartProductGeometry(backgroundItem), backgroundRect=getBaseLayerRect(backgroundItem);
+      const sourcePoint={x:40,y:180};
+      const point={x:Math.round(backgroundGeometry.x+(sourcePoint.x-backgroundGeometry.bounds.x-backgroundGeometry.bounds.width/2)*backgroundGeometry.drawWidth/backgroundGeometry.bounds.width),
+        y:Math.round(backgroundGeometry.y+(sourcePoint.y-backgroundGeometry.bounds.y-backgroundGeometry.bounds.height/2)*backgroundGeometry.drawHeight/backgroundGeometry.bounds.height)};
+      const sampleBackground=async()=>{
+        const bitmap=await createImageBitmap(await createExportBlob(backgroundItem,'png'));
+        const output=document.createElement('canvas');output.width=bitmap.width;output.height=bitmap.height;
+        const c=output.getContext('2d');c.drawImage(bitmap,0,0);bitmap.close();return [...c.getImageData(point.x,point.y,1,1).data];
+      };
+      const defaultPixel=await sampleBackground();
+      assert('Default export retains original background detail at the fitted source position',defaultPixel.every((value,i)=>Math.abs(value-[178,206,228,255][i])<=1));
+      assert('Remove BG is available but inactive after automatic fitting',!removeBgButton.disabled && removeBgButton.getAttribute('aria-pressed')==='false');
+      removeBgButton.click();
+      assert('Manual Remove BG still removes the background without changing fitted geometry',backgroundItem.removeBg
+        && ['x','y','width','height'].every(key=>near(getBaseLayerRect(backgroundItem)[key],backgroundRect[key])) && (await sampleBackground()).slice(0,3).every(value=>value===255));
+      removeBgButton.click();
+      assert('Restoring the background returns the same default pixels and fitted geometry',!backgroundItem.removeBg
+        && (await sampleBackground()).every((value,i)=>value===defaultPixel[i]) && ['x','y','width','height'].every(key=>near(getBaseLayerRect(backgroundItem)[key],backgroundRect[key])));
+      backgroundItem.watermarkEnabled=originalWatermark;drawActive();
 
       for (const format of ['png', 'jpg', 'webp']) {
         const output = await createImageBitmap(await createExportBlob(files[0], format));

@@ -101,6 +101,7 @@ Text must render consistently in the main canvas, left-side thumbnails, grid pre
 
 - Uploaded and duplicated image layers retain their exact scale, position, background state and independent settings.
 - Remove BG and Ctrl+B remain toggles; restoring an original background must not resize or move the product.
+- Apply Workflow keeps the original background by default, using the same analyzed bounds and sizing logic. Manual background removal remains available without changing fitted geometry.
 - Close View images retain their original background and native-size protections.
 - Listing workflows, CPIS metadata precedence, template matching, 50px safe-area spacing and saved-watermark persistence remain functional.
 - DSA eBay skips material selection and DT/DB unmain generation, and exports directly into its ZIP without subfolders. Other accounts retain their current export behavior.
@@ -122,6 +123,8 @@ Text must render consistently in the main canvas, left-side thumbnails, grid pre
 Load order is `text-layers.js`, `script.js`, `workspace-ui.js`, then `editor-history.js` after the existing watermark/metadata modules. Text functions are initialized before the renderer, but their controls are assembled after the main editor DOM exists.
 
 ## Validation
+
+The later original-background default update passed 191 checks across preparation (30), Normal-template fitting (54), layer layout (31), background toggles (17) and history (59). All 1,368 preparation placement cases retain the prior geometry. The sidebar validation below records the preceding UI revision.
 
 The latest scrollbar/alignment revision passed 82 workspace browser checks with no uncaught browser errors. These verify the native image-list scrollbar on the left with unchanged thumbnail/action order, exact short tooltips, selection-relative horizontal/vertical alignment and no-op/Undo/Redo behavior, sections directly beneath Layers without cards, paired watermark accounts without arrows on desktop/mobile, canvas group centering, simplified layer actions, exclusive panels, keyboard navigation, Background controls, text-layer panel switching, header exports, templates below all accounts, Grid View sidebar hiding, desktop/mobile scroll visibility, a downloaded Grid View ZIP, and view-control gesture isolation. Earlier revisions passed 127 workspace/history checks, 78 workspace/background checks and the initial 220 checks across six suites. The other suite results in the table are historical validations, not reruns for this latest change:
 

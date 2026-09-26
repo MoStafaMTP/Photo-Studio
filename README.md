@@ -101,8 +101,9 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 
 ### Smart preparation
 
-- Separate products from edge-connected studio backgrounds locally in the browser.
-- Reconstruct the background behind the product's original position.
+- Analyze product boundaries locally to calculate the existing automatic fit, while keeping the original photo and its background visible by default.
+- Keep the same product scale, center, template clearance and Normal-template adjustments. Background removal is available explicitly through Remove BG, Ctrl+B or Remove All BG.
+- Retain source-colored background reconstruction only to fill any surrounding area beyond the transformed original photo.
 - Analyze each watermark's alpha channel to find its largest clear horizontal band.
 - Fit the complete product proportionally inside that safe area without cropping.
 - Keep a minimum 50 output-pixel gap inside template margins. Normal templates can grow products upward by up to 8% into clear space between the top logos, while checking the actual silhouette for 50px artwork clearance and preserving proportions and bottom spacing. Custom margins and full-image fallbacks retain the ordinary fit.
@@ -176,6 +177,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 
 ## Validation
 
+The original-background default passed 191 checks across preparation (30), Normal-template fitting (54), layer layout (31), background toggles (17) and history (59). All 1,368 preparation placement cases retain the previous sizing/positioning. Pixel checks confirm that background detail from the original source survives export at the fitted location and can still be removed/restored manually without a size change. New prepared duplicates and generated unmain images also retain backgrounds by default.
+
 The latest scrollbar/alignment revision passed 82 browser checks in `tests/workspace-text.browser.cjs`. These cover the image-list scrollbar on the left, short tooltips, relative horizontal/vertical alignment and canvas centering with Undo/Redo, sections directly below Layers, paired watermark accounts without arrows, simplified layer actions, exclusive icon panels, keyboard navigation, Background controls, header exports, text editing, group/copy behavior, workflow/unmain copies, font fallback, export pixels and a downloaded ZIP. A 35-image batch scrolls inside the workspace. Layout is checked at desktop, smaller desktop and mobile sizes. Earlier revisions passed 127 workspace/history checks, 78 workspace/background checks and the initial 220 checks across six suites; those historical results are recorded in the workspace handoff.
 
 `tests/background-toggle.browser.cjs` passes 17 checks with its generated fixture and 25 checks when run with the supplied `9.jpg` and `FullSet.jpg`. Real clicks and keyboard events verify pressed/enabled state, deselection, exact original-PNG restoration, cached repeated toggles, numeric-field Ctrl+B, Undo/Redo, prepared-source restoration, duplicates, groups, deleted base layers and Close View protection. Optional image paths can be passed as command-line arguments; the supplied photos remain outside the repository.
@@ -190,13 +193,13 @@ The latest scrollbar/alignment revision passed 82 browser checks in `tests/works
 
 `tests/editor-history.browser.cjs` checks whole-batch history, more than 50 one-pixel moves, keyboard/wheel/numeric input, mouse dragging, cross-image Undo/Redo, layers, uploads/deletions, atomic workflow/reset actions, saved-watermark persistence, metadata actions, and fixed geometry and export pixels when removing/restoring backgrounds. It also verifies that repeated preparation reuses immutable image buffers.
 
-Layer duplication and account switching passed 30 checks in `tests/layer-layout.browser.cjs`: exact duplicate sizes at multiple rotations and fit modes, large scales, prepared cutout/export pixel bounds, background toggling, clipboard and group copies, repeated account changes, Main/Normal/manual watermark changes, layer order and selection, deleted original layers, composed unmain outputs, Close View preservation, and continued manual editing.
+Layer duplication and account switching passed 31 checks in `tests/layer-layout.browser.cjs`: original backgrounds on default prepared duplicates, exact duplicate sizes at multiple rotations and fit modes, large scales, prepared cutout/export pixel bounds, background toggling, clipboard and group copies, repeated account changes, Main/Normal/manual watermark changes, layer order and selection, deleted original layers, composed unmain outputs, Close View preservation, and continued manual editing.
 
 Normal-template fitting passed 54 checks in `tests/normal-template-fit.browser.cjs`, including native-pixel 50px header clearance for all seven Normal templates at four output sizes, rotation/flips, wide products, custom margins, full-width banners, Close View preservation and export. The sample Elite product grew 8% and its top whitespace decreased from 229px to 103px.
 
 The DT/DB output workflow has 39 checks in `tests/listing-unmain.browser.cjs`, covering pending-copy review, actual Apply Workflow/individual/ZIP downloads, independent editing and assets, repeat/delete behavior, existing unmain files, missing templates/copy failures, clean filenames, Full Set aliases across every account/material, landscape centering, CPIS overrides and metadata round trips, Normal-last grouping with selection preservation, and template-based export folders including empty folders and filename collisions. The metadata unit suite includes eight tests.
 
-The updated preparation suite passed 24 browser checks, including 1,368 placement cases across all 57 templates, four output sizes, two product proportions and three rotations; JPG/PNG/WebP pixel checks; prepared-layer movement/centering; Close View background and size protection; duplicates; and impossible-margin validation. Run `node tests/listing-preparation.browser.cjs` and `node tests/normal-template-fit.browser.cjs` with Playwright available for testing. Optional `PLAYWRIGHT_MODULE` and `BROWSER_EXECUTABLE` environment variables can point to existing installations.
+The updated preparation suite passed 30 browser checks, including original background retention with unchanged geometry across 1,368 placement cases covering all 57 templates, four output sizes, two product proportions and three rotations; JPG/PNG/WebP pixel checks; manual removal/restoration; prepared-layer movement/centering; Close View background and size protection; duplicates; and impossible-margin validation. Run `node tests/listing-preparation.browser.cjs` and `node tests/normal-template-fit.browser.cjs` with Playwright available for testing. Optional `PLAYWRIGHT_MODULE` and `BROWSER_EXECUTABLE` environment variables can point to existing installations.
 
 The CPIS update passed 7 unit tests (including all 55 variation/shared-component and subtype combinations), 19 integration browser checks, and the existing 16-check Elite/Close View browser suite. Run `node --test tests/listing-metadata.test.cjs` for the repeatable metadata checks.
 

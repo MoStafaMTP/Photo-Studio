@@ -34,6 +34,10 @@ const path = require('node:path');
       const removedSource = getImageSource(item), removedRect = getBaseLayerRect(item); duplicateSelectedLayers();
       check('Background-removed ordinary duplicate keeps source pixels and exact dimensions', item.layers[0].removeBg && getAddedLayerSource(item.layers[0]) === removedSource && equalRect(removedRect, getAddedLayerRect(item.layers[0]), 35));
       clearLayers(); listingAccount.value = '6'; listingMaterial.value = 'genuine-leather-solid'; await applyListingWatermarks();
+      const defaultRect=getBaseLayerRect(item); duplicateSelectedLayers(); const defaultCopy=item.layers[0];
+      check('New prepared images and their duplicates keep original backgrounds at the same fitted size',!item.removeBg && item.originalBackgroundRestored
+        && !defaultCopy.removeBg && getAddedLayerSource(defaultCopy)===defaultCopy.sourceSnapshot.original && equalRect(defaultRect,getAddedLayerRect(defaultCopy),35));
+      clearLayers(); toggleSelectedLayerBackgrounds();
       for (const rotation of [0, 15, 90]) {
         clearLayers(); Object.assign(item, {scale: 73, rotation, mirror: true, flipY: true, shadow: true, shadowAngle: 35, shadowDistance: 23, shadowStrength: 80});
         const before = getBaseLayerRect(item), geometry = smartProductGeometry(item); duplicateSelectedLayers();

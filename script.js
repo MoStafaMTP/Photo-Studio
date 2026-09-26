@@ -2327,7 +2327,8 @@ async function applyListingWatermarksInternal() {
         if (row.item.smartPrep.mode === 'fallback') fallbackCount += 1;
         row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
         row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100; row.item.fit = 'contain';
-        row.item.removeBg = false; row.item.originalBackgroundRestored = false; row.item.processed = null;
+        // Keep the original photo visible; use the same analyzed bounds only for fitting.
+        row.item.removeBg = false; row.item.originalBackgroundRestored = true; row.item.processed = null;
       } else row.item.smartPrep = null;
     }
     files.push(...generatedItems);
