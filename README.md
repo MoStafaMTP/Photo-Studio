@@ -27,6 +27,7 @@ Detailed handoffs are available in:
 - Resize, rotate in 15-degree steps, and flip horizontally or vertically.
 - Drag layers with optional Shift axis locking.
 - Move layers with arrow keys or Shift+Arrow for faster movement.
+- Tab selects the next left-side image; Shift+Tab selects the previous one and scrolls it into view. Navigation stops at the first/last image and selects that image alone, like a normal thumbnail click. Form fields and the Listing dialog retain normal Tab focus navigation.
 - Add, duplicate, delete, select, group, resize, and reorder layers.
 - Images uploaded or dropped into Layers start at 100% of the proportional canvas fit; the old hidden 32% reduction is removed. A 1576 × 1576 layer fills a 1576 × 1576 canvas at 100%. The size controls display fractional percentages and support added layers up to 500%; Close Views still use native pixel size.
 - Duplicate and copy/paste preserve the displayed layer size, rotation, flips, shadows, and prepared product cutout. Prepared copies can toggle between their original background and saved cutout.

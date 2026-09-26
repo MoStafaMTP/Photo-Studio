@@ -1505,6 +1505,21 @@ function isLayerShortcutTypingTarget(target) {
   return target instanceof HTMLInputElement && target.type !== 'checkbox';
 }
 document.addEventListener('keydown', (event) => {
+  if ((event.key !== 'Tab' && event.code !== 'Tab') || event.defaultPrevented || event.isComposing
+      || event.ctrlKey || event.metaKey || event.altKey || activeIndex < 0 || !files.length) return;
+  // Keep normal field/dialog focus navigation and avoid switching during a drag.
+  if (event.target instanceof HTMLInputElement || isLayerShortcutTypingTarget(event.target)
+      || !listingPanel.hidden || listingBusy || exporting || imageDrag) return;
+  event.preventDefault();
+  const nextIndex = Math.max(0, Math.min(files.length - 1, activeIndex + (event.shiftKey ? -1 : 1)));
+  if (nextIndex === activeIndex) return;
+  selectImage(nextIndex);
+  const thumbnail = thumbList.querySelector(`[data-thumb-index="${nextIndex}"] .thumb-select`);
+  thumbnail?.focus({preventScroll: true});
+  thumbnail?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  setStatus(`Image ${nextIndex + 1} of ${files.length}: ${files[nextIndex].displayName || files[nextIndex].file.name}`);
+}, true);
+document.addEventListener('keydown', (event) => {
   if (activeIndex < 0 || event.repeat || isLayerShortcutTypingTarget(event.target)) return;
   const listingOverlay = document.querySelector('#listing-panel');
   if (listingOverlay && !listingOverlay.hidden) return;

@@ -137,6 +137,8 @@ The Image Size control includes a synchronized 10–300% numeric field. The full
 
 Layer keyboard controls include `Delete` for selected-layer removal, `Ctrl + C` and `Ctrl + V` for the internal layer clipboard, `Ctrl + Enter` for horizontal and vertical group centering, and `Ctrl + B` for toggling selected-layer backgrounds off or on. Pasted layers retain their transforms, shadows, and background-removal state and receive independent image assets.
 
+`Tab` / `Shift + Tab` navigate to the next / previous left-side image in the current displayed batch order. They stop at the first/last image, use ordinary single-image selection (including watermark scope), refresh layer controls/canvas and focus/scroll the selected thumbnail into view. Navigation does not add Undo/Redo entries. Inputs, selects, text areas, editable content and Listing keep native Tab focus navigation; Ctrl/Meta/Alt combinations and active drag/export/workflow operations are excluded.
+
 Clicking empty space outside the canvas deselects all layers without changing the selected left-side images. Editing controls preserve layer selection, and scrolling over the canvas only resizes selected layers.
 
 Manual **Remove BG** or **Remove All BG** intentionally exits smart preparation for the affected base image and returns it to the manual background-removal workflow. Reset also clears smart preparation from the current image.
@@ -164,6 +166,8 @@ History covers layer and batch uploads, duplication and deletion, stacking, size
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+Tab navigation passed 14 focused browser checks using actual keyboard events: next/previous selection, thumbnail focus and scrolling, first/last boundaries, watermark selection scope, retained image edits and Undo/Redo, native field/dialog focus, modifier exclusions, and single/empty batches. No browser errors were reported.
 
 `tests/subject-preservation.browser.cjs` passes 23 checks for interior colors matching the background, subtle light-subject boundaries, corner-touching subjects, thin features, existing transparency/translucency, gradients and uncertain-cutout fallback. Production actions cover Remove BG, repeated toggles, Undo/Redo, duplicates, added layers, Remove All BG, Close View protection and transparent PNG exports. Generated fixtures reproduce the old global-color deletion and thin-detail erosion; the user confirmed the issue occurs with Remove BG but did not provide a failing source photo.
 
