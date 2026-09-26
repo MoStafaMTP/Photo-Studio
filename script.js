@@ -15,6 +15,7 @@ const UI_ICONS = {
   centerHorizontal: '<path d="M12 3v18" stroke-dasharray="2 2"/><path d="m9 8-4 4 4 4m6-8 4 4-4 4"/>',
   centerVertical: '<path d="M3 12h18" stroke-dasharray="2 2"/><path d="m8 9 4-4 4 4m-8 6 4 4 4-4"/>',
   alignVertical: '<path d="M2 12h20" stroke-dasharray="2 2"/><rect x="5" y="4" width="4" height="16" rx="1"/><rect x="15" y="8" width="4" height="8" rx="1"/>',
+  alignHorizontal: '<path d="M12 2v20" stroke-dasharray="2 2"/><rect x="4" y="5" width="16" height="4" rx="1"/><rect x="8" y="15" width="8" height="4" rx="1"/>',
   centerBoth: '<circle cx="12" cy="12" r="3"/><path d="M12 2v7m0 6v7M2 12h7m6 0h7"/>',
   sideBySide: '<rect x="3" y="5" width="7" height="14" rx="1.5"/><rect x="14" y="5" width="7" height="14" rx="1.5"/>',
   minus: '<path d="M5 12h14"/>',
@@ -95,10 +96,11 @@ const positionGroup = document.createElement('div');
 positionGroup.className = 'toolbar-group position-control';
 positionGroup.innerHTML = '<span class="toolbar-label">Position</span>';
 const centerHorizontal = document.createElement('button'); centerHorizontal.className = 'tool-toggle position-icon-button'; setIconControl(centerHorizontal, 'centerHorizontal', 'Center horizontally');
-const centerVertical = document.createElement('button'); centerVertical.className = 'tool-toggle position-icon-button'; setIconControl(centerVertical, 'centerVertical', 'Center selected layers vertically as a group');
-const alignVertical = document.createElement('button'); alignVertical.className = 'tool-toggle position-icon-button'; alignVertical.disabled = true; setIconControl(alignVertical, 'alignVertical', 'Align selected layers vertically with each other');
+const centerVertical = document.createElement('button'); centerVertical.className = 'tool-toggle position-icon-button'; setIconControl(centerVertical, 'centerVertical', 'Center Vertically');
+const alignVertical = document.createElement('button'); alignVertical.className = 'tool-toggle position-icon-button'; alignVertical.disabled = true; setIconControl(alignVertical, 'alignVertical', 'Align Vertically');
+const alignHorizontal = document.createElement('button'); alignHorizontal.className = 'tool-toggle position-icon-button'; alignHorizontal.disabled = true; setIconControl(alignHorizontal, 'alignHorizontal', 'Align Horizontally');
 centerImage.classList.add('position-icon-button'); setIconControl(centerImage, 'centerBoth', 'Center horizontally and vertically');
-centerImage.remove(); positionGroup.append(centerHorizontal, centerImage, centerVertical, alignVertical); rotateGroup.after(positionGroup);
+centerImage.remove(); positionGroup.append(centerHorizontal, centerImage, centerVertical, alignVertical, alignHorizontal); rotateGroup.after(positionGroup);
 
 const backgroundGroup = document.createElement('div'); backgroundGroup.className = 'toolbar-group background-control';
 backgroundGroup.innerHTML = '<span class="toolbar-label">BG</span><div class="background-modes"><button type="button" class="tool-toggle" data-background="none">None</button><button type="button" class="tool-toggle active" data-background="color">Color</button></div>';
@@ -1076,7 +1078,7 @@ function getSelectedLayerEntities(item) {
 function syncSelectedLayerControls() {
   const item = files[activeIndex];
   const selected = item ? getSelectedLayerEntities(item) : [];
-  alignVertical.disabled = selected.length < 2;
+  alignVertical.disabled = alignHorizontal.disabled = selected.length < 2;
   const primary = selected[0];
   const minimumScale = selected.some((entity) => isCloseViewImage(entity.data)) ? 100 : 10;
   imageScale.min = minimumScale; imageScaleValue.min = minimumScale;
@@ -1138,17 +1140,19 @@ function centerSelectedLayerEntities(axis = 'both') {
     setLayerEntityCenter(item, entity.id, rect.x + dx, rect.y + dy);
   });
 }
-function alignSelectedLayerCentersVertically() {
+function alignSelectedLayerCenters(axis = 'y') {
   const item = files[activeIndex]; if (!item) return;
   const entities = getSelectedLayerEntities(item); if (entities.length < 2) return;
   const bounds = selectedLayerBounds(item); if (!bounds) return;
   // Align to the selection's current midpoint, independently of the canvas center.
+  const moves = entities.map(entity => ({id: entity.id, rect: getLayerEntityRect(item, entity.id)}))
+    .filter(({rect}) => Math.abs(rect[axis] - bounds[axis]) > 1e-7);
+  if (!moves.length) return;
   saveHistory();
-  entities.forEach(entity => {
-    const rect = getLayerEntityRect(item, entity.id);
-    setLayerEntityCenter(item, entity.id, rect.x, bounds.y);
+  moves.forEach(({id, rect}) => {
+    setLayerEntityCenter(item, id, axis === 'x' ? bounds.x : rect.x, axis === 'y' ? bounds.y : rect.y);
   });
-  drawActive(); setStatus('Selected layers aligned to the same vertical center.');
+  drawActive(); setStatus(`Selected layers aligned to the same ${axis === 'x' ? 'horizontal' : 'vertical'} center.`);
 }
 function scaleSelectedLayerEntities(factor) {
   const item = files[activeIndex]; if (!item || !selectedLayerIds.size) return;
@@ -1380,7 +1384,8 @@ resizeWidth.addEventListener('input', () => { saveHistory(); drawActive(); }); r
 centerImage.addEventListener('click', () => { if (!selectedLayerIds.size) return; saveHistory(); centerSelectedLayerEntities('both'); drawActive(); setStatus('Selected layers centered horizontally and vertically.'); });
 centerHorizontal.addEventListener('click', () => { if (!selectedLayerIds.size) return; saveHistory(); centerSelectedLayerEntities('x'); drawActive(); setStatus('Selected layers centered horizontally.'); });
 centerVertical.addEventListener('click', () => { if (!selectedLayerIds.size) return; saveHistory(); centerSelectedLayerEntities('y'); drawActive(); setStatus('Selected layers centered vertically.'); });
-alignVertical.addEventListener('click', alignSelectedLayerCentersVertically);
+alignVertical.addEventListener('click', () => alignSelectedLayerCenters('y'));
+alignHorizontal.addEventListener('click', () => alignSelectedLayerCenters('x'));
 backgroundGroup.querySelectorAll('[data-background]').forEach(button => button.addEventListener('click', () => {
   saveHistory(); backgroundMode = button.dataset.background; backgroundColor.disabled = backgroundMode !== 'color';
   backgroundGroup.querySelectorAll('[data-background]').forEach(option => option.classList.toggle('active', option === button));

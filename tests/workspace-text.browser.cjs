@@ -33,7 +33,8 @@ const os = require('node:os');
       const layers=layerGroup.getBoundingClientRect(),panel=imageTools.section.getBoundingClientRect(),style=getComputedStyle(imageTools.section);
       return Math.abs(panel.top-layers.bottom)<1 && Math.abs(panel.left-layers.left)<1 && style.borderTopWidth==='0px' && style.borderRadius==='0px' && getComputedStyle(sidebarSections).paddingTop==='0px';
     }));
-    check('Relative layer alignment is disabled for a single selected layer',await page.getByRole('button',{name:'Align selected layers vertically with each other',exact:true}).isDisabled());
+    check('Relative layer alignment is disabled for a single selected layer',await page.getByRole('button',{name:'Align Vertically',exact:true}).isDisabled() && await page.getByRole('button',{name:'Align Horizontally',exact:true}).isDisabled());
+    check('Center and alignment tooltips use the requested short labels',await page.evaluate(()=>[centerVertical,alignVertical,alignHorizontal].every((button,i)=>button.title===['Center Vertically','Align Vertically','Align Horizontally'][i] && button.getAttribute('aria-label')===button.title)));
     const beforeTabs=await page.evaluate(()=>({history:undoStack.length,selection:[...selectedLayerIds],y:files[0].offsetY}));
     await page.getByRole('tab',{name:'Image Size & Shadow',exact:true}).focus(); await page.keyboard.press('ArrowDown');
     check('Arrow navigation opens only Saved Watermarks without moving the image', await page.evaluate(before=>activeSidebarSection==='saved-watermarks-section' && files[0].offsetY===before.y && document.querySelectorAll('.sidebar-section:not([hidden])').length===1,beforeTabs));
@@ -72,21 +73,36 @@ const os = require('node:os');
       return allLayerEntityIds(files[0]).map(id=>({id,...getLayerEntityRect(files[0],id)}));
     });
     const relativeCenter=await page.evaluate(()=>selectedLayerBounds(files[0]).y);
-    await page.getByRole('button',{name:'Align selected layers vertically with each other',exact:true}).click();
+    await page.getByRole('button',{name:'Align Vertically',exact:true}).click();
     check('Relative alignment gives selected layers a shared vertical center without centering on the canvas',await page.evaluate(({before,target})=>{
       const item=files[0],near=(a,b)=>Math.abs(a-b)<.00001,after=before.map(rect=>getLayerEntityRect(item,rect.id));
       return !near(target,canvas.height/2) && near(after[0].y,target) && near(after[1].y,target) && near(after[2].y,before[2].y)
         && after.every((rect,i)=>near(rect.x,before[i].x)&&near(rect.width,before[i].width)&&near(rect.height,before[i].height));
     },{before:beforeVertical,target:relativeCenter}));
     const afterAlignHistory=await page.evaluate(()=>undoStack.length);
-    await page.getByRole('button',{name:'Align selected layers vertically with each other',exact:true}).click();
+    await page.getByRole('button',{name:'Align Vertically',exact:true}).click();
     check('Repeating relative alignment is a no-op with no extra Undo step',await page.evaluate(depth=>undoStack.length===depth,afterAlignHistory));
     await page.keyboard.press('Control+z');
     check('Undo restores the individual positions before relative alignment',await page.evaluate(before=>before.every(rect=>Math.abs(getLayerEntityRect(files[0],rect.id).y-rect.y)<.00001),beforeVertical));
     await page.keyboard.press('Control+y');
     check('Redo restores the shared selection-relative center',await page.evaluate(target=>getSelectedLayerEntities(files[0]).every(entity=>Math.abs(getLayerEntityRect(files[0],entity.id).y-target)<.00001),relativeCenter));
     await page.keyboard.press('Control+z');
-    await page.getByRole('button',{name:'Center selected layers vertically as a group',exact:true}).click();
+    const relativeX=await page.evaluate(()=>selectedLayerBounds(files[0]).x);
+    await page.getByRole('button',{name:'Align Horizontally',exact:true}).click();
+    check('Horizontal alignment shares the selection midpoint while preserving vertical positions and sizes',await page.evaluate(({before,target})=>{
+      const item=files[0],near=(a,b)=>Math.abs(a-b)<.00001,after=before.map(rect=>getLayerEntityRect(item,rect.id));
+      return !near(target,canvas.width/2) && near(after[0].x,target) && near(after[1].x,target) && near(after[2].x,before[2].x)
+        && after.every((rect,i)=>near(rect.y,before[i].y)&&near(rect.width,before[i].width)&&near(rect.height,before[i].height));
+    },{before:beforeVertical,target:relativeX}));
+    const afterHorizontalHistory=await page.evaluate(()=>undoStack.length);
+    await page.getByRole('button',{name:'Align Horizontally',exact:true}).click();
+    check('Repeated horizontal alignment does not add empty Undo steps',await page.evaluate(depth=>undoStack.length===depth,afterHorizontalHistory));
+    await page.keyboard.press('Control+z');
+    check('Undo restores the separate horizontal layer positions',await page.evaluate(before=>before.every(rect=>Math.abs(getLayerEntityRect(files[0],rect.id).x-rect.x)<.00001),beforeVertical));
+    await page.keyboard.press('Control+y');
+    check('Redo reapplies horizontal alignment relative to the selection',await page.evaluate(target=>getSelectedLayerEntities(files[0]).every(entity=>Math.abs(getLayerEntityRect(files[0],entity.id).x-target)<.00001),relativeX));
+    await page.keyboard.press('Control+z');
+    await page.getByRole('button',{name:'Center Vertically',exact:true}).click();
     check('Vertical center moves the selection together without resizing or moving other layers',await page.evaluate(before=>{
       const item=files[0],near=(a,b)=>Math.abs(a-b)<.00001,after=before.map(rect=>getLayerEntityRect(item,rect.id)),dy=after[0].y-before[0].y;
       return near(selectedLayerBounds(item).y,canvas.height/2) && !near(dy,0)
@@ -259,9 +275,15 @@ const os = require('node:os');
     check('Scrolling the grid keeps both downloads and the format selector visible', await page.locator('.editor-actions').evaluate(el=>el.getBoundingClientRect().bottom) === gridDownloadBottom && await page.locator('#export-one').isVisible() && await page.locator('#export-all').isVisible() && await page.locator('#export-format').isVisible());
     await page.getByRole('button',{name:'Full Screen View',exact:true}).click();
     check('Full Screen View retains a separately scrolling image list',await page.evaluate(()=>thumbList.scrollHeight>thumbList.clientHeight && document.documentElement.scrollHeight===innerHeight));
+    check('Image-list scrollbar is on the left while thumbnails and actions keep their reading order',await page.evaluate(()=>{
+      const row=thumbList.querySelector('.thumb-item'),select=row.querySelector('.thumb-select'),copy=row.querySelector('.thumb-duplicate'),remove=row.querySelector('.thumb-remove');
+      return getComputedStyle(thumbList).direction==='rtl' && thumbList.clientLeft>0 && getComputedStyle(row).direction==='ltr'
+        && select.getBoundingClientRect().right<=copy.getBoundingClientRect().left && copy.getBoundingClientRect().right<=remove.getBoundingClientRect().left;
+    }));
     const downloadBottom = await page.locator('.editor-actions').evaluate(el=>el.getBoundingClientRect().bottom);
     await page.locator('#thumb-list').evaluate(el=>el.scrollTop=el.scrollHeight);
     check('Scrolling the image list keeps both download buttons fixed and visible', await page.locator('.editor-actions').evaluate(el=>el.getBoundingClientRect().bottom) === downloadBottom && await page.locator('#export-one').isVisible() && await page.locator('#export-all').isVisible());
+    await page.screenshot({path:path.join(os.tmpdir(),'photo-studio-left-scrollbar.png')});
     await page.setViewportSize({width:1280,height:720});
     check('Smaller desktop keeps layers and section controls reachable',await page.locator('.sidebar-sections').evaluate(el=>el.clientHeight>100));
     await page.setViewportSize({width:390,height:844});

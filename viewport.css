@@ -4,7 +4,8 @@ html,body { width:100%; height:100%; overflow:hidden; }
 .editor-shell { min-height:0; height:calc(100dvh - 68px); }
 .editor-sidebar { min-height:0; height:100%; overflow:hidden; }
 .editor-sidebar-title,.upload-drop,.editor-actions { flex:none; }
-.thumb-list { flex:1 1 0!important; min-height:0!important; overflow-x:hidden!important; overflow-y:auto!important; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.thumb-list { flex:1 1 0!important; min-height:0!important; overflow-x:hidden!important; overflow-y:auto!important; overscroll-behavior:contain; scrollbar-gutter:stable; direction:rtl; }
+.thumb-list > * { direction:ltr; }
 .site-header { gap:16px; }
 .site-header .header-actions { display:flex!important; align-items:center; gap:8px; min-width:0; overflow-x:auto; scrollbar-width:none; }
 .site-header .header-actions::-webkit-scrollbar { display:none; }

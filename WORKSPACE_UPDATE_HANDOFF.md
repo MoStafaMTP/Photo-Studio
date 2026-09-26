@@ -23,13 +23,15 @@ The view switch must operate on the existing project images. Current edits, laye
 
 Retain current batch selection behavior in the grid: single-image selection, Ctrl/Command multi-selection and Ctrl+Alt+A to select all. Existing selected-image watermark targeting and image duplicate/delete/export actions must remain available. The grid should scroll within the workspace when the batch is large.
 
+The left image list's scrollbar is on its left edge. The scrolling container uses RTL direction only to place the native scrollbar; its children restore LTR direction so thumbnails, filenames and duplicate/delete buttons keep their existing order.
+
 ## 2. Right-side sections
 
 Keep **Layers** fixed at the top of the Right Side and always open. Its controls and layer list must remain accessible while the tools below scroll; a long layer list may scroll within its own area.
 
 The top action row contains Add images, Select all, Clear, Duplicate and Delete (the last two are icons). It wraps within the same action group on mobile. Smaller, Bigger and Side By Side actions are removed. Image Size and scrolling remain available for scaling. The Position group no longer includes Movement Lock; its vertical-center icon moves the selected layers as one group to the canvas midpoint, preserving horizontal positions, sizes and relative spacing. Unselected layers stay in place, and the action supports Undo/Redo. Shift-drag still constrains motion to the dominant axis.
 
-A separate **Align selected layers vertically with each other** icon sets every selected layer's vertical center to the selection's current bounding-box midpoint. It keeps horizontal positions and sizes, does not move unselected layers, and works independently of the canvas center. It is disabled with fewer than two selected layers. Undo/Redo restores the individual positions; repeating alignment does not create an empty history step.
+The canvas-centering icon's tooltip and accessible name are **Center Vertically**. The separate **Align Vertically** icon gives every selected layer the same Y center, and **Align Horizontally** gives them the same X center, using the selection's current bounding-box midpoint. These alignment actions keep sizes and positions on the other axis, leave unselected layers untouched, and work independently of the canvas center. Both icons are disabled with fewer than two selected layers. Undo/Redo restores individual positions; repeating alignment does not create an empty history step, including insignificant floating-point differences.
 
 An icon rail on the far right selects one of three sections directly below Layers. The section shares the sidebar's white background, without an outer border, rounded card or inset gap:
 
@@ -114,18 +116,18 @@ Text must render consistently in the main canvas, left-side thumbnails, grid pre
 - Duplication, copy/paste, batch duplication and generated unmain copies preserve text data with independent IDs. Image-asset loading and background removal skip text layers. Text can remain as the final layer after deleting the original image layer.
 - The header stays on one line. The export format and both download buttons are direct header children, outside the horizontally scrollable editing tools. Export labels collapse to accessible icons on narrow screens; the format selector stays visible. The old floating dock and its resize observer are removed. Grid View reserves bottom space only for the view controls, hides the sidebar and expands into the freed space. Resize is below Image Size and controls canvas dimensions; Image Size controls the selected layer's percentage scale.
 - Movement Lock is removed from the DOM, movement handlers and history settings. Vertical centering reuses `centerSelectedLayerEntities('y')`, which translates the selection by a common offset without scaling or changing internal arrangement.
-- `alignSelectedLayerCentersVertically()` uses the selection bounds before editing to give all selected layers a shared vertical center. It preserves each layer's horizontal center and routes changes through the existing layer-position and history helpers.
+- `alignSelectedLayerCenters(axis)` uses the selection bounds before editing to give all selected layers a shared X or Y center. It preserves the other coordinate and routes changes through the existing layer-position and history helpers. Deltas below `1e-7` pixels are ignored to prevent rounding-only Undo entries on repeated clicks.
 - Personal watermarks still persist in IndexedDB. Uploaded images, text layers, view state and Undo/Redo are session state, consistent with the existing editor; this update does not add project-file persistence across reloads.
 
 Load order is `text-layers.js`, `script.js`, `workspace-ui.js`, then `editor-history.js` after the existing watermark/metadata modules. Text functions are initialized before the renderer, but their controls are assembled after the main editor DOM exists.
 
 ## Validation
 
-The latest sidebar/alignment revision passed 76 workspace browser checks with no uncaught browser errors. These verify sections directly beneath Layers without cards, paired watermark accounts without arrows on desktop/mobile, selection-relative vertical alignment and its no-op/Undo/Redo behavior, canvas group centering, simplified layer actions, exclusive panels, keyboard navigation, Background controls, text-layer panel switching, header exports, templates below all accounts, Grid View sidebar hiding, desktop/mobile scroll visibility, a downloaded Grid View ZIP, and view-control gesture isolation. Earlier revisions passed 127 workspace/history checks, 78 workspace/background checks and the initial 220 checks across six suites. The other suite results in the table are historical validations, not reruns for this latest change:
+The latest scrollbar/alignment revision passed 82 workspace browser checks with no uncaught browser errors. These verify the native image-list scrollbar on the left with unchanged thumbnail/action order, exact short tooltips, selection-relative horizontal/vertical alignment and no-op/Undo/Redo behavior, sections directly beneath Layers without cards, paired watermark accounts without arrows on desktop/mobile, canvas group centering, simplified layer actions, exclusive panels, keyboard navigation, Background controls, text-layer panel switching, header exports, templates below all accounts, Grid View sidebar hiding, desktop/mobile scroll visibility, a downloaded Grid View ZIP, and view-control gesture isolation. Earlier revisions passed 127 workspace/history checks, 78 workspace/background checks and the initial 220 checks across six suites. The other suite results in the table are historical validations, not reruns for this latest change:
 
 | Suite | Checks | Coverage |
 | --- | ---: | --- |
-| `tests/workspace-text.browser.cjs` | 76 | Seamless sections below Layers, paired watermark accounts without arrows, relative alignment and canvas group centering with history, simplified layer actions, exclusive icon panels, header exports, Background controls, real view/account/text interactions, keyboard navigation, text history/transforms/copies, image-only background removal, workflow/unmain preservation, font fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
+| `tests/workspace-text.browser.cjs` | 82 | Left-edge image scrollbar, short tooltips, relative alignment on both axes and canvas group centering with history, seamless sections below Layers, paired watermark accounts without arrows, simplified layer actions, exclusive icon panels, header exports, Background controls, real view/account/text interactions, keyboard navigation, text history/transforms/copies, image-only background removal, workflow/unmain preservation, font fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
 | `tests/editor-history.browser.cjs` | 59 | Existing whole-session history and all editing paths. |
 | `tests/layer-layout.browser.cjs` | 30 | Exact duplicate sizes and preserving compositions across account/template changes. |
 | `tests/listing-unmain.browser.cjs` | 39 | Template mapping, generated copies, metadata and real downloads. |
@@ -147,7 +149,8 @@ Screenshots were inspected at 1600 × 1000, including Grid View and text editing
 - [x] Downloads and export format stay visible in the header when Grid View hides the sidebar; the header remains one line.
 - [x] Duplicate and Delete sit beside Add images, Select all and Clear; Smaller, Bigger and Side By Side are removed.
 - [x] Group vertical centering replaces Movement Lock and preserves size, horizontal position and spacing, with Undo/Redo support.
-- [x] An additional relative-alignment icon gives selected layers a shared vertical center at their current location, with Undo/Redo support.
+- [x] Align Vertically and Align Horizontally give selected layers a shared center on the chosen axis at their current location, with Undo/Redo support; Center Vertically retains canvas-centering behavior.
+- [x] The left image list's scrollbar sits on the left, preserving thumbnail and action order.
 - [x] Text can be added, edited, styled and manipulated as a true layer.
 - [x] Text input shortcuts do not accidentally trigger destructive layer actions.
 - [x] Text, fonts and styling match across previews and all export formats.
