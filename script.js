@@ -1736,7 +1736,7 @@ function createListingPlan() {
   const usedNames = new Set(rows.map(row => stemOf(listingSourceName(row.item))));
   for (const source of [...rows]) {
     if (source.metadataError || source.item.generatedFromImageId || source.detection.subtype !== 'main'
-        || !['DT', 'PT'].includes(source.detection.variation)) continue;
+        || !['DT', 'DB'].includes(source.detection.variation)) continue;
     const sourceName = listingSourceName(source.item), stem = sourceName.replace(/\.[^/.]+$/, '');
     const unmainStem = `${stem} unmain`;
     if (rows.some(row => row.item.generatedFromImageId === source.item.id
@@ -1967,7 +1967,11 @@ async function materializeUnmainRow(row) {
 }
 async function applyListingWatermarks() {
   const plan = createListingPlan();
-  if (!plan.ready) throw new Error(plan.rows.find(row => row.metadataError)?.metadataError || (plan.missingCount ? 'Required watermark templates are missing.' : plan.rows.some(row => !row.imageReady) ? 'Wait for all images to load successfully.' : 'Choose an account and material first.'));
+  if (!plan.ready) {
+    const missingNames = [...new Set(plan.rows.filter(row => !row.metadataError && !row.template && row.requestedTemplate).map(row => row.requestedTemplate))];
+    throw new Error(plan.rows.find(row => row.metadataError)?.metadataError || (plan.missingCount ? `Required watermark templates are missing in ${plan.section.name}: ${missingNames.join(', ')}.` : plan.rows.some(row => !row.imageReady) ? 'Wait for all images to load successfully.' : 'Choose an account and material first.'));
+  }
+  const activeItem = files[activeIndex];
   const useSmartPreparation = Boolean(listingSmartPrep.checked);
   const templateAssets = new Map();
   await Promise.all(uniqueListingTemplates(plan).map(async ({template}) => {
@@ -2026,6 +2030,10 @@ async function applyListingWatermarks() {
     undoStack.length = 0; redoStack.length = 0; updateHistoryButtons();
     plan.rows.forEach(row => { row.pendingGeneration = false; });
   }
+  // Keep relative order within each group and preserve the active image by identity.
+  files.sort((a, b) => Number(usesNormalTemplate(a)) - Number(usesNormalTemplate(b)));
+  activeIndex = files.indexOf(activeItem);
+  plan.rows.sort((a, b) => Number(usesNormalTemplate(a.item)) - Number(usesNormalTemplate(b.item)));
   selectedWatermarkSection = plan.sectionIndex;
   activeWatermarkSection = plan.sectionIndex;
   activeWatermarkTemplateId = plan.rows[0]?.template.id || null;
@@ -2134,6 +2142,10 @@ function createWatermarkId() { return globalThis.crypto?.randomUUID?.() || `${Da
 function fileNameWithoutExtension(file) { return file.name.replace(/\.[^/.]+$/, '').trim().slice(0, 40) || 'Watermark template'; }
 function findWatermarkTemplate(sectionIndex, templateId) {
   return watermarkSections[sectionIndex]?.templates.find((template) => template.id === templateId);
+}
+function usesNormalTemplate(item) {
+  const template = findWatermarkTemplate(item.watermarkSection, item.watermarkTemplateId);
+  return normalizeListingTemplateName(template?.name) === 'normal';
 }
 async function saveWatermarkSection(index) {
   const personalTemplates = watermarkSections[index].templates.filter((template) => !template.builtIn && template.blob);
@@ -2378,6 +2390,7 @@ async function createZip(entries) {
     localParts.push(local, data);
     const central = new Uint8Array(46 + name.length), centralView = new DataView(central.buffer);
     centralView.setUint32(0, 0x02014b50, true); centralView.setUint16(4, 20, true); centralView.setUint16(6, 20, true); centralView.setUint16(8, 0x0800, true); centralView.setUint16(10, 0, true); centralView.setUint16(12, stamp.time, true); centralView.setUint16(14, stamp.date, true); centralView.setUint32(16, crc, true); centralView.setUint32(20, data.length, true); centralView.setUint32(24, data.length, true); centralView.setUint16(28, name.length, true); centralView.setUint16(30, 0, true); centralView.setUint16(32, 0, true); centralView.setUint16(34, 0, true); centralView.setUint16(36, 0, true); centralView.setUint32(38, 0, true); centralView.setUint32(42, localOffset, true); central.set(name, 46);
+    if (entry.name.endsWith('/')) centralView.setUint32(38, 0x10, true);
     centralParts.push(central); centralSize += central.length; localOffset += local.length + data.length;
   }
   const end = new Uint8Array(22), endView = new DataView(end.buffer);
@@ -2392,17 +2405,18 @@ function exportBatchFileName(batchItems) {
   return `${name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim()}.zip`;
 }
 async function exportBatchArchive(batchItems, format, archiveName = exportBatchFileName(batchItems), progressLabel = 'Exporting') {
-  const entries = [], usedNames = new Set();
+  const entries = ['Main/', 'unmain/'].map(name => ({name, blob: new Blob([])})), usedNames = new Set();
   for (let index = 0; index < batchItems.length; index += 1) {
     setStatus(`${progressLabel} ${index + 1} of ${batchItems.length}…`);
+    const folder = usesNormalTemplate(batchItems[index]) ? 'unmain' : 'Main';
     const requestedName = exportFileName(batchItems[index], format), stem = requestedName.slice(0, -(format.length + 1));
-    let name = requestedName, copyNumber = 2;
-    while (usedNames.has(name.toLowerCase())) name = `${stem} (${copyNumber++}).${format}`;
+    let name = `${folder}/${requestedName}`, copyNumber = 2;
+    while (usedNames.has(name.toLowerCase())) name = `${folder}/${stem} (${copyNumber++}).${format}`;
     usedNames.add(name.toLowerCase());
     entries.push({name, blob: await createExportBlob(batchItems[index], format)});
   }
   triggerDownload(await createZip(entries), archiveName);
-  return entries.length;
+  return batchItems.length;
 }
 exportOne.addEventListener('click', async () => {
   const item = files[activeIndex]; if (!item) return;

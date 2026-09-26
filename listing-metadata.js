@@ -67,10 +67,11 @@
     if (/(?:^|[^A-Z])CLOSE[\s_-]*VIEW(?=$|[^A-Z])/.test(stem)) {
       return {code: 'CLOSE VIEW', type: 'normal', label: 'Close View · original size', closeView: true, subtype: 'cv', source: 'filename'};
     }
-    const match = stem.match(/(?:^|[^A-Z0-9])(DPTB|DOPT|DOPB|DPB|DPT|DTB|PTB|DT|DB|PT|PB)(?:[\s_-]*(UNMAIN|CV|IO)(?:\d+)?|[\s_-]*(\d+))?(?=$|[^A-Z0-9])/);
+    const match = stem.match(/(?:^|[^A-Z0-9])(DPTB|FULL[\s_-]*SET|DOPT|DOPB|DPB|DPT|DTB|PTB|DT|DB|PT|PB)(?:[\s_-]*(UNMAIN|CV|IO)(?:\d+)?|[\s_-]*(\d+))?(?=$|[^A-Z0-9])/);
     if (!match) return {code: 'NORMAL', type: 'normal', label: 'Other / Normal', source: 'filename'};
     const trailingUnmain = /(?:^|[\s_-])UNMAIN(?:\s*\(\d+\))?$/.test(stem);
-    return resolveImage({filename: String(filename), variation: match[1], subtype: match[2]?.toLowerCase() || (match[3] ? 'numbered' : trailingUnmain ? 'unmain' : 'main')}, 'filename');
+    const variation = /^FULL[\s_-]*SET$/.test(match[1]) ? 'DPTB' : match[1];
+    return resolveImage({filename: String(filename), variation, subtype: match[2]?.toLowerCase() || (match[3] ? 'numbered' : trailingUnmain ? 'unmain' : 'main')}, 'filename');
   }
   root.PhotoStudioMetadata = Object.freeze({primary, shared, subtypes, normalizePayload, normalizeImage, resolveImage, detectFilename});
 })(globalThis);

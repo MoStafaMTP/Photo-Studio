@@ -19,7 +19,7 @@ const path = require('node:path');
       addImages([new File([blob],'details.png',{type:'image/png'}),new File([blob],'Close View.png',{type:'image/png'}),new File([blob],'DT.png',{type:'image/png'})]);
       await Promise.all(files.map(item=>item.image.decode()));
       listingAccount.value='6';listingMaterial.value='genuine-leather-solid';await applyListingWatermarks();
-      const item=files[0], close=files[1], main=files[2];
+      const item=files.find(item=>item.file.name==='details.png'), close=files.find(item=>item.file.name==='Close View.png'), main=files.find(item=>item.file.name==='DT.png');
       const baseline=()=>{
         const bounds=item.smartPrep.bounds,r=smartSafeRect(item.smartPrep),fit=Math.min(r.width/bounds.width,r.height/bounds.height);
         return {x:r.x+r.width/2,y:r.y+r.height/2,width:bounds.width*fit,height:bounds.height*fit};
@@ -107,7 +107,7 @@ const path = require('node:path');
       item.watermarkImage=bannerImage;item.smartPrep.safeArea={canvasWidth:1500,canvasHeight:1500,topMargin:180,bottomMargin:120,source:'template',clearance:0};
       const constrained=smartProductGeometry(item);
       assert('Normal full-width banner caps upward growth before artwork',constrained.y-constrained.height/2>=130/1500*canvas.height+50&&clearanceViolations(constrained)===0);
-      selectImage(0);const real=findListingTemplate(6,'Normal').template;await selectWatermarkTemplate(6,real.id);
+      selectImage(files.indexOf(item));const real=findListingTemplate(6,'Normal').template;await selectWatermarkTemplate(6,real.id);
       const expected=smartProductGeometry(item),png=await createImageBitmap(await createExportBlob(item,'png'));
       assert('Production export keeps canvas size and adapted geometry',png.width===1576&&png.height===1576&&near(smartProductGeometry(item).height,expected.height));
       // Export a before/after visual using the production renderer.

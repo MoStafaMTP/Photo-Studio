@@ -62,13 +62,26 @@ test('local fallback understands compact subtypes and shared filenames', () => {
   }
 });
 
-test('Full Set uses DPTB and is distinct from DT or PT', () => {
+test('Full Set filenames resolve as DPTB with Main and supporting subtypes', () => {
   const fullSet = metadata.resolveImage(image('DPTB', 'main'));
   assert.equal(fullSet.code, 'DPTB');
   assert.equal(fullSet.label, 'Full Set · Main');
   assert.equal(metadata.detectFilename('DPTB.jpg').variation, 'DPTB');
+  for (const name of ['Full Set.jpg', 'full_set.png', 'Full-Set.webp', 'FullSet.jpg', 'truck Full Set black.jpg']) {
+    const result = metadata.detectFilename(name);
+    assert.equal(result.variation, 'DPTB', name);
+    assert.equal(result.subtype, 'main', name);
+    assert.equal(result.type, 'main', name);
+  }
+  for (const [name, subtype] of [['Full Set cv.jpg', 'cv'], ['Full-Set-io.png', 'io'], ['Full_Set2.jpg', 'numbered'], ['Full Set unmain.jpg', 'unmain']]) {
+    const result = metadata.detectFilename(name);
+    assert.equal(result.variation, 'DPTB', name);
+    assert.equal(result.subtype, subtype, name);
+    assert.equal(result.type, 'normal', name);
+  }
+  assert.equal(metadata.resolveImage(image('PT', 'main', 'Full Set.jpg')).type, 'passenger');
 });
 test('fallback keeps long Close View names and does not match embedded words', () => {
   for (const name of ['Close View.png','truck_close_view_02.jpg','DT-Close-View.webp','seat-CloseView1.png']) assert.equal(metadata.detectFilename(name).closeView,true);
-  for (const name of ['ADTop.png','notDOPT.jpg','myDPTB123word.png','details.png']) assert.equal(metadata.detectFilename(name).code,'NORMAL');
+  for (const name of ['ADTop.png','notDOPT.jpg','myDPTB123word.png','details.png','NotFull Set.jpg','Full Settings.jpg']) assert.equal(metadata.detectFilename(name).code,'NORMAL');
 });

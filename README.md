@@ -49,10 +49,11 @@ Detailed handoffs are available in:
 
 - Select an eBay account and product material.
 - Import resolved CPIS metadata through **Import CPIS JSON** or `window.PhotoStudioIntegration`; metadata takes priority over filenames.
-- Detect `DB`, `PB`, `DPB`, `DT`, `PT`, `DPT`, `DTB`, `PTB`, and `DPTB` filename codes.
+- Detect `DB`, `PB`, `DPB`, `DT`, `PT`, `DPT`, `DTB`, `PTB`, and `DPTB` filename codes. `Full Set` (also `Full_Set`, `Full-Set`, and `FullSet`) is an alias for `DPTB` and follows its material-specific Main template rules.
 - Support DOPT/DOPB as shared image types and `main`, `unmain`, `cv`, `io`, and `numbered` subtypes. Only primary `main` images use Main/Passenger templates; all other roles use Normal unless CPIS supplies an explicit template choice.
 - Select Main, Passenger Side, or Normal templates automatically.
-- Apply Workflow creates an additional editable Normal-template image for each DT/PT main source, named with ` unmain` before the extension (for example, `DT unmain.jpg`). Originals keep their templates. The review shows planned copies, and repeated runs reuse existing copies. Full Set uses `DPTB` and does not create a DT/PT copy.
+- Apply Workflow creates an additional editable Normal-template image for each DT/DB main source, named with ` unmain` before the extension (for example, `DB unmain.jpg`). Originals keep their templates. The review shows planned copies, and repeated runs reuse existing copies. PT and Full Set do not generate unmain copies.
+- After Apply Workflow, all images assigned a Normal template appear below the other images. Order within each group, the active image, and multi-image selection are preserved.
 - Review every image and resolved template before processing.
 - Close View filenames (`Close View`, `Close_View`, `Close-View`, or `CloseView`, case-insensitive) use the account's Normal template and keep the source image at its original pixel size with its background intact. This also takes priority when the filename contains a part code such as `DT`.
 - Use Apply Workflow to prepare the images, then review them in the editor and use Export Batch to download a ZIP.
@@ -83,8 +84,8 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 
 - JPG, PNG, and WebP output.
 - Export the current image.
-- Keep uploaded image filenames without adding `Photo Studio`. The chosen format determines the extension. ZIP name collisions receive a number such as `DT (2).jpg` so every image remains available.
-- Export the complete batch as a browser-generated ZIP.
+- Keep uploaded image filenames without adding `Photo Studio`. The chosen format determines the extension. ZIP name collisions within each folder receive a number such as `DT (2).jpg` so every image remains available.
+- Export the complete batch as a browser-generated ZIP containing `Main/` and `unmain/`. Images assigned Normal templates go in `unmain/`; all other images go in `Main/`. This follows the current template, including manual changes, rather than the filename or subtype. Both folders are included even when one is empty.
 - Batch ZIP names match the applied template's account folder, such as `Elite.zip`, `DIY.zip`, or `US Auto Nation.zip`. Mixed accounts use their folder names joined with ` + `; batches without an assigned template keep `photo-studio-batch.zip`.
 - Export prepared eBay listing images with the header's current-image or Export Batch controls.
 
@@ -138,7 +139,7 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 
 Normal-template fitting passed 54 checks in `tests/normal-template-fit.browser.cjs`, including native-pixel 50px header clearance for all seven Normal templates at four output sizes, rotation/flips, wide products, custom margins, full-width banners, Close View preservation and export. The sample Elite product grew 8% and its top whitespace decreased from 229px to 103px.
 
-The DT/PT output workflow has 26 checks in `tests/listing-unmain.browser.cjs`, covering pending-copy review, actual Apply Workflow/individual/ZIP downloads, independent editing and assets, repeat/delete behavior, existing unmain files, missing templates/copy failures, clean filenames, DPTB, landscape centering, CPIS overrides and metadata round trips, and filename collisions. The metadata unit suite includes eight tests.
+The DT/DB output workflow has 39 checks in `tests/listing-unmain.browser.cjs`, covering pending-copy review, actual Apply Workflow/individual/ZIP downloads, independent editing and assets, repeat/delete behavior, existing unmain files, missing templates/copy failures, clean filenames, Full Set aliases across every account/material, landscape centering, CPIS overrides and metadata round trips, Normal-last grouping with selection preservation, and template-based export folders including empty folders and filename collisions. The metadata unit suite includes eight tests.
 
 The updated preparation suite passed 24 browser checks, including 1,368 placement cases across all 57 templates, four output sizes, two product proportions and three rotations; JPG/PNG/WebP pixel checks; prepared-layer movement/centering; Close View background and size protection; duplicates; and impossible-margin validation. Run `node tests/listing-preparation.browser.cjs` and `node tests/normal-template-fit.browser.cjs` with Playwright available for testing. Optional `PLAYWRIGHT_MODULE` and `BROWSER_EXECUTABLE` environment variables can point to existing installations.
 
