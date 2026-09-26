@@ -177,6 +177,8 @@ const verticalFlipButton = document.querySelector('#vertical-flip');
 let activeIndex = -1;
 let dragOffset = { x: 0, y: 0 };
 let exporting = false;
+let backgroundRemovalBusy = false;
+const manualFullCutouts = new WeakMap();
 let selectedLayerIds = new Set(['base']);
 let layerClipboard = [];
 let layerClipboardPasteCount = 0;
@@ -382,7 +384,7 @@ async function duplicateBatchImage(index) {
     const idMap = new Map();
     const layers = (source.layers || []).map((layer, layerIndex) => {
       const id = createLayerId(); idMap.set(layer.id, id);
-      return {...layer, id, url: layerAssets[layerIndex].url, image: layerAssets[layerIndex].image, processed: null};
+      return {...layer, id, url: layerAssets[layerIndex].url, image: layerAssets[layerIndex].image};
     });
     const duplicate = {
       ...source,
@@ -390,7 +392,7 @@ async function duplicateBatchImage(index) {
       displayName: duplicateDisplayName(source.displayName || source.file.name),
       url: baseAsset.url,
       image: baseAsset.image,
-      processed: null,
+      processed: source.processed,
       thumbnailDataUrl: source.thumbnailDataUrl,
       layers,
       layerOrder: allLayerEntityIds(source).map((id) => id === 'base' ? 'base' : idMap.get(id)).filter(Boolean)
@@ -415,8 +417,8 @@ function updateRemoveBackgroundControls() {
   const eligible = files.flatMap(entry => allLayerEntityIds(entry).map(id => getLayerEntity(entry, id).data)).filter(entry => !isTextLayer(entry) && !isCloseViewImage(entry));
   const removed = Boolean(selected.length) && selected.every(entity => entity.data.removeBg);
   const mixed = !removed && selected.some(entity => entity.data.removeBg);
-  removeBgButton.disabled = !selected.length;
-  removeAllBgButton.disabled = !eligible.length;
+  removeBgButton.disabled = backgroundRemovalBusy || !selected.length;
+  removeAllBgButton.disabled = backgroundRemovalBusy || !eligible.length;
   removeBgButton.classList.toggle('active', removed);
   removeBgButton.setAttribute('aria-pressed', mixed ? 'mixed' : String(removed));
   removeBgButton.setAttribute('aria-keyshortcuts', 'Control+B Meta+B');
@@ -600,6 +602,7 @@ function getImageSource(item) {
   return item.processed;
 }
 function getAddedLayerSource(layer) {
+  if (!isCloseViewImage(layer) && layer.removeBg && layer.processed) return layer.processed;
   if (!isCloseViewImage(layer) && layer.removeBg && layer.sourceSnapshot?.cutout) return layer.sourceSnapshot.cutout;
   if (!isCloseViewImage(layer) && layer.sourceSnapshot?.removeBg === Boolean(layer.removeBg)) return layer.sourceSnapshot.image;
   if (!isCloseViewImage(layer) && !layer.removeBg && layer.sourceSnapshot?.original) return layer.sourceSnapshot.original;
@@ -964,11 +967,11 @@ function drawSmartPreparedBase(item) {
   ctx.save();
   ctx.translate(geometry.x, geometry.y); ctx.rotate((item.rotation || 0) * Math.PI / 180); ctx.scale(item.mirror ? -1 : 1, item.flipY ? -1 : 1);
   if (item.shadow) { const distance = Number(item.shadowDistance ?? 18); const angle = Number(item.shadowAngle ?? 90); ctx.shadowColor = `rgba(36, 25, 20, ${Number(item.shadowStrength ?? 80) / 100})`; ctx.shadowBlur = 26; ctx.shadowOffsetX = Math.cos(angle * Math.PI / 180) * distance; ctx.shadowOffsetY = Math.sin(angle * Math.PI / 180) * distance; }
-  if (!item.removeBg && item.originalBackgroundRestored) {
+  if ((!item.removeBg && item.originalBackgroundRestored) || (item.removeBg && item.processed)) {
     // Restore the actual source, aligned to the fitted product. Keeping the
     // preparation/bounds avoids a size or position jump when toggling back.
     const size = imageSourceSize(item.image), sx = geometry.drawWidth / bounds.width, sy = geometry.drawHeight / bounds.height;
-    ctx.drawImage(item.image, -(bounds.x + bounds.width / 2) * sx, -(bounds.y + bounds.height / 2) * sy, size.width * sx, size.height * sy);
+    ctx.drawImage(item.removeBg ? item.processed : item.image, -(bounds.x + bounds.width / 2) * sx, -(bounds.y + bounds.height / 2) * sy, size.width * sx, size.height * sy);
   } else {
     const foreground = item.removeBg && preparation.mode !== 'separated'
       ? (item.processed ||= createBackgroundRemovedSource(preparation.foreground)) : preparation.foreground;
@@ -1043,7 +1046,13 @@ function drawAddedLayer(layer) {
   const rect = getAddedLayerDrawRect(layer);
   ctx.save(); ctx.translate(rect.x, rect.y); ctx.rotate((layer.rotation || 0) * Math.PI / 180); ctx.scale(layer.mirror ? -1 : 1, layer.flipY ? -1 : 1);
   if (layer.shadow) { const distance = Number(layer.shadowDistance ?? 18); const angle = Number(layer.shadowAngle ?? 90); ctx.shadowColor = `rgba(36, 25, 20, ${Number(layer.shadowStrength ?? 80) / 100})`; ctx.shadowBlur = 26; ctx.shadowOffsetX = Math.cos(angle * Math.PI / 180) * distance; ctx.shadowOffsetY = Math.sin(angle * Math.PI / 180) * distance; }
-  ctx.drawImage(source, -rect.width / 2, -rect.height / 2, rect.width, rect.height); ctx.restore();
+  const snapshot = layer.sourceSnapshot;
+  if (layer.removeBg && snapshot?.fullCutout && snapshot.crop && !isCloseViewImage(layer)) {
+    // Retain AI-detected details outside the older sizing mask in prepared copies.
+    const bounds = snapshot.crop, sx = rect.width / bounds.width, sy = rect.height / bounds.height;
+    ctx.drawImage(snapshot.fullCutout, -(bounds.x + bounds.width / 2) * sx, -(bounds.y + bounds.height / 2) * sy, snapshot.fullCutout.width * sx, snapshot.fullCutout.height * sy);
+  } else ctx.drawImage(source, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
+  ctx.restore();
 }
 function normalizeLayerOrder(item) {
   if (!item) return [];
@@ -1191,24 +1200,27 @@ function duplicateSelectedLayers() {
 function layerCopyDescriptor(item, id) {
   if (id !== 'base') {
     const source = item.layers.find((layer) => layer.id === id);
-    return source ? {...source, id: null, url: null, image: null, processed: null} : null;
+    return source ? {...source, id: null, url: null, image: null} : null;
   }
   const rect = getBaseLayerRect(item);
   const geometry = item.smartPrep?.enabled ? smartProductGeometry(item) : null;
   let sourceSnapshot = null;
   if (geometry) {
     const {bounds} = geometry, image = document.createElement('canvas'); image.width = bounds.width; image.height = bounds.height;
-    const foreground = item.removeBg && item.smartPrep.mode !== 'separated'
-      ? (item.processed ||= createBackgroundRemovedSource(item.smartPrep.foreground)) : item.smartPrep.foreground;
+    const foreground = item.processed || (item.removeBg && item.smartPrep.mode !== 'separated'
+      ? (item.processed ||= createBackgroundRemovedSource(item.smartPrep.foreground)) : item.smartPrep.foreground);
     image.getContext('2d').drawImage(foreground, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, image.width, image.height);
     const original = document.createElement('canvas'); original.width = image.width; original.height = image.height;
     const sourceSize = imageSourceSize(item.image), analysisSize = imageSourceSize(item.smartPrep.foreground);
     original.getContext('2d').drawImage(item.image, bounds.x * sourceSize.width / analysisSize.width, bounds.y * sourceSize.height / analysisSize.height,
       bounds.width * sourceSize.width / analysisSize.width, bounds.height * sourceSize.height / analysisSize.height, 0, 0, original.width, original.height);
     const removed = item.removeBg || (item.smartPrep.mode === 'separated' && !item.originalBackgroundRestored);
-    sourceSnapshot = {image: removed ? image : original, original, cutout: (item.removeBg || item.smartPrep.mode === 'separated') ? image : null, removeBg: removed};
+    sourceSnapshot = {image: removed ? image : original, original, cutout: (item.processed || item.removeBg || item.smartPrep.mode === 'separated') ? image : null,
+      removeBg: removed, removalSource: item.image, crop: {...bounds}, aiCutout: Boolean(item.processedAI && item.processed), fullCutout: item.processedAI ? item.processed : null};
   }
   const descriptor = {id: null, file: item.file, name: item.displayName || item.file.name, url: null, image: item.image, closeView: isCloseViewImage(item), x: rect.x, y: rect.y, scale: Math.max(minimumLayerScale(item), item.scale ?? 100), fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: sourceSnapshot ? sourceSnapshot.removeBg : Boolean(item.removeBg), processed: item.processed, sourceSnapshot, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
+  descriptor.processed = sourceSnapshot ? null : item.processed;
+  descriptor.processedAI = Boolean(item.processedAI);
   const drawWidth = geometry?.drawWidth ?? getBaseLayerDrawSize(item, getImageSource(item)).width;
   const descriptorRect = getAddedLayerDrawRect(descriptor);
   // Keep the editable percentage; convert the base fit separately without a size cap.
@@ -1252,7 +1264,7 @@ async function pasteCopiedLayers() {
     name: `${entry.name || 'Layer'} copy`.slice(0, 60),
     url: assetResults[index].value.url,
     image: assetResults[index].value.image,
-    processed: null,
+    processed: entry.processed,
     x: (entry.x ?? canvas.width / 2) + offset,
     y: (entry.y ?? canvas.height / 2) + offset
   }));
@@ -1585,16 +1597,78 @@ shadowToggle.addEventListener('click', () => {
 removeBgButton.addEventListener('click', () => {
   toggleSelectedLayerBackgrounds();
 });
-function toggleSelectedLayerBackgrounds() {
+async function toggleSelectedLayerBackgrounds() {
+  if (backgroundRemovalBusy || listingBusy || exporting) return false;
   const item = files[activeIndex], selected = getBackgroundTargetEntities(item);
   if (!selected.length) { setStatus('Select one or more layers first.'); return false; }
   const eligible = selected.filter((entity) => !isTextLayer(entity.data) && !isCloseViewImage(entity.data));
   if (!eligible.length) { setStatus('Background removal applies to image layers, except Close View images.'); return false; }
   const nextValue = !eligible.every((entity) => entity.data.removeBg);
-  saveHistory();
-  eligible.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.originalBackgroundRestored = !nextValue; });
-  syncSelectedLayerControls(); drawActive(); setStatus((nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.') + (eligible.length < selected.length ? ' Text and Close View layers were skipped.' : ''));
-  return true;
+  return applyLayerBackgrounds(eligible.map(entity => entity.data), nextValue);
+}
+async function prepareManualCutout(layer, options) {
+  if (layer.processedAI && layer.processed) return layer.processed;
+  const snapshot = layer.sourceSnapshot;
+  if (snapshot?.aiCutout && snapshot.cutout) return snapshot.cutout;
+  const source = snapshot?.removalSource || snapshot?.original || layer.image;
+  const result = await PhotoStudioBackground.remove(source, options);
+  if (!snapshot?.crop) return result;
+  const crop = snapshot.crop, cutout = document.createElement('canvas');
+  cutout.width = snapshot.original.width; cutout.height = snapshot.original.height;
+  cutout.getContext('2d').drawImage(result, crop.x, crop.y, crop.width, crop.height, 0, 0, cutout.width, cutout.height);
+  manualFullCutouts.set(cutout, result);
+  return cutout;
+}
+async function applyLayerBackgrounds(layers, remove) {
+  if (backgroundRemovalBusy || listingBusy || exporting || !layers.length) return false;
+  const apply = (cutouts = []) => withHistoryActionSync(() => {
+    saveHistory();
+    layers.forEach((layer, index) => {
+      if (remove) {
+        layer.processed = cutouts[index]; layer.processedAI = true;
+        if (layer.sourceSnapshot) layer.sourceSnapshot = {...layer.sourceSnapshot, cutout: cutouts[index], aiCutout: true,
+          fullCutout: manualFullCutouts.get(cutouts[index]) || layer.sourceSnapshot.fullCutout};
+      }
+      layer.removeBg = remove; layer.originalBackgroundRestored = !remove;
+    });
+    syncSelectedLayerControls(); drawActive();
+    setStatus(remove ? `Background removed from ${layers.length} layer${layers.length === 1 ? '' : 's'}.` : 'Original backgrounds restored.');
+    return true;
+  });
+  if (!remove) return apply();
+  // Cache hits keep the background toggle instant, including duplicated layers.
+  if (layers.every(layer => (layer.processedAI && layer.processed) || (layer.sourceSnapshot?.aiCutout && layer.sourceSnapshot.cutout))) {
+    return apply(layers.map(layer => layer.processed || layer.sourceSnapshot.cutout));
+  }
+  const controller = new AbortController(), dialog = document.createElement('dialog');
+  dialog.className = 'background-progress'; dialog.setAttribute('aria-labelledby', 'background-progress-title');
+  dialog.innerHTML = '<h2 id="background-progress-title">Removing background</h2><p class="background-progress-detail" role="status" aria-live="polite"></p><p class="background-progress-count"></p><button type="button" autofocus>Cancel</button>';
+  const detail = dialog.querySelector('.background-progress-detail'), count = dialog.querySelector('.background-progress-count');
+  dialog.querySelector('button').onclick = () => controller.abort();
+  dialog.addEventListener('cancel', event => { event.preventDefault(); controller.abort(); });
+  // A modal keeps edits, exports and history separate from this atomic operation.
+  // The document's editor keyboard listeners also need to stay out of the dialog.
+  const blockKeys = event => { if (event.key !== 'Escape' && event.key !== 'Tab' && event.key !== 'Enter' && event.key !== ' ') event.preventDefault(); event.stopImmediatePropagation(); };
+  window.addEventListener('keydown', blockKeys, true);
+  backgroundRemovalBusy = true; updateRemoveBackgroundControls();
+  const focused = document.activeElement; document.body.append(dialog); dialog.showModal();
+  try {
+    const cutouts = [];
+    for (let i = 0; i < layers.length; i++) {
+      detail.textContent = 'Preparing image…'; count.textContent = `Layer ${i + 1} of ${layers.length} · Photos stay on this device`;
+      cutouts.push(await prepareManualCutout(layers[i], {signal: controller.signal, onProgress: text => { detail.textContent = text; }}));
+    }
+    if (controller.signal.aborted) return false;
+    const current = new Set(files.flatMap(item => allLayerEntityIds(item).map(id => getLayerEntity(item, id).data)));
+    if (!layers.every(layer => current.has(layer) && !isCloseViewImage(layer))) throw new Error('Background removal canceled because the selected layers changed.');
+    return apply(cutouts);
+  } catch (error) {
+    setStatus(error.name === 'AbortError' ? 'Background removal canceled. Images are unchanged.' : `Background removal failed: ${error.message} Images are unchanged.`);
+    return false;
+  } finally {
+    backgroundRemovalBusy = false; dialog.close(); dialog.remove(); window.removeEventListener('keydown', blockKeys, true);
+    updateRemoveBackgroundControls(); if (focused?.isConnected) focused.focus({preventScroll: true});
+  }
 }
 function isLayerShortcutTypingTarget(target) {
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target?.isContentEditable) return true;
@@ -1640,18 +1714,12 @@ document.addEventListener('keydown', (event) => {
     saveHistory(); centerSelectedLayerEntities('both'); drawActive(); setStatus('Selected layers centered horizontally and vertically.');
   } else toggleSelectedLayerBackgrounds();
 }, true);
-removeAllBgButton.addEventListener('click', () => {
-  if (!files.length) return;
-  let count = 0, skipped = 0;
-  files.forEach((item) => {
-    allLayerEntityIds(item).map(id => getLayerEntity(item, id).data).forEach((layer) => {
-      if (isTextLayer(layer)) return;
-      if (isCloseViewImage(layer)) { skipped += 1; return; }
-      layer.removeBg = true; layer.originalBackgroundRestored = false; count += 1;
-    });
-  });
-  syncSelectedLayerControls(); drawActive(); setStatus(`Background removal enabled for ${count} layer${count === 1 ? '' : 's'}.${skipped ? ' Close View images were skipped.' : ''}`);
-});
+function removeAllLayerBackgrounds() {
+  const layers = files.flatMap(item => allLayerEntityIds(item).map(id => getLayerEntity(item, id).data))
+    .filter(layer => !isTextLayer(layer) && !isCloseViewImage(layer));
+  return applyLayerBackgrounds(layers, true);
+}
+removeAllBgButton.addEventListener('click', removeAllLayerBackgrounds);
 // Store named watermark template collections in IndexedDB.
 const watermarkDB = new Promise((resolve, reject) => {
   const request = indexedDB.open('photo-studio-assets', 1);
@@ -2118,7 +2186,7 @@ function syncCPISMetadataControls() {
     : 'Local uploads use filename detection.';
 }
 function prepareCPISMetadata(payload, items) {
-  if (listingBusy) throw new Error('Wait for the current Listing workflow to finish.');
+  if (listingBusy || backgroundRemovalBusy) throw new Error('Wait for the current image processing to finish.');
   const normalized = PhotoStudioMetadata.normalizePayload(payload);
   const account = normalized.account.toLowerCase();
   const sectionIndex = watermarkSections.findIndex((section, index) =>
@@ -2189,7 +2257,7 @@ function clearCPISMetadata() {
   return withHistoryActionSync(clearCPISMetadataInternal);
 }
 function clearCPISMetadataInternal() {
-  if (listingBusy) throw new Error('Wait for the current Listing workflow to finish.');
+  if (listingBusy || backgroundRemovalBusy) throw new Error('Wait for the current image processing to finish.');
   cpisListingContext = null;
   files.forEach(item => { delete item.listingMetadata; });
   renderListingPreview(); setStatus('Filename detection enabled for this batch.');
@@ -2256,7 +2324,7 @@ async function materializeUnmainRow(row) {
     for (const layer of source.layers || []) {
       const asset = isTextLayer(layer) ? {} : await loadDuplicateAsset(layer.file); loaded.push(asset);
       const id = createLayerId(); idMap.set(layer.id, id);
-      layers.push({...layer, ...asset, id, processed: null});
+      layers.push({...layer, ...asset, id});
     }
     return {...row.item, ...baseAsset, file, processed: source.processed, smartPrep: source.smartPrep ? {...source.smartPrep} : null, thumbnailDataUrl: null, layers,
       layerOrder: allLayerEntityIds(source).map(id => id === 'base' ? 'base' : idMap.get(id)).filter(Boolean)};
@@ -2266,6 +2334,7 @@ async function materializeUnmainRow(row) {
   }
 }
 async function applyListingWatermarks() {
+  if (backgroundRemovalBusy) throw new Error('Wait for background removal to finish.');
   return withHistoryAction(applyListingWatermarksInternal);
 }
 async function applyListingWatermarksInternal() {
@@ -2315,7 +2384,7 @@ async function applyListingWatermarksInternal() {
       }
       row.item.originalSize = Boolean(row.detection.closeView);
       if (row.detection.closeView) {
-        row.item.smartPrep = null; row.item.removeBg = false; row.item.originalBackgroundRestored = false; row.item.processed = null;
+        row.item.smartPrep = null; row.item.removeBg = false; row.item.originalBackgroundRestored = false; row.item.processed = null; row.item.processedAI = false;
         row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
         row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100;
         closeViewCount += 1;
@@ -2328,7 +2397,7 @@ async function applyListingWatermarksInternal() {
         row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
         row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100; row.item.fit = 'contain';
         // Keep the original photo visible; use the same analyzed bounds only for fitting.
-        row.item.removeBg = false; row.item.originalBackgroundRestored = true; row.item.processed = null;
+        row.item.removeBg = false; row.item.originalBackgroundRestored = true; row.item.processed = null; row.item.processedAI = false;
       } else row.item.smartPrep = null;
     }
     files.push(...generatedItems);
@@ -2367,7 +2436,7 @@ listingAccount.addEventListener('change', renderListingPreview);
 listingMaterial.addEventListener('change', renderListingPreview);
 listingSmartPrep.addEventListener('change', renderListingPreview);
 async function runListingWorkflow() {
-  if (listingBusy) throw new Error('The Listing workflow is already running.');
+  if (listingBusy || backgroundRemovalBusy) throw new Error('Wait for the current image processing to finish.');
   setListingBusy(true, 'Applying…');
   try {
     await applyListingWatermarks();
@@ -2729,7 +2798,7 @@ exportAll.addEventListener('click', async () => {
 document.querySelector('#reset-editor').addEventListener('click', () => withHistoryActionSync(() => {
   const item = files[activeIndex]; if (!item) return;
   Object.assign(item, {rotation: 0, mirror: false, flipY: false, offsetX: 0, offsetY: 0, scale: 100,
-    removeBg: false, originalBackgroundRestored: false, processed: null, smartPrep: null, shadow: false, shadowAngle: 90, shadowDistance: 18,
+    removeBg: false, originalBackgroundRestored: false, processed: null, processedAI: false, smartPrep: null, shadow: false, shadowAngle: 90, shadowDistance: 18,
     shadowStrength: 80, fit: 'contain', watermarkImage: null, watermarkEnabled: false, watermarkOpacity: 100,
     watermarkSection: null, watermarkTemplateId: null});
   fitSelect.value = 'contain'; setImageScaleInputs(100); resizeWidth.value = resizeHeight.value = 1576;

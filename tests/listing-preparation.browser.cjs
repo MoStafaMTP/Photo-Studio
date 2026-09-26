@@ -1,5 +1,5 @@
 // Requires Playwright for testing only. PLAYWRIGHT_MODULE and BROWSER_EXECUTABLE
-// can point to existing installations; the website itself has no dependencies.
+// can point to existing installations. AI masks are stubbed for geometry checks.
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const {pathToFileURL} = require('node:url');
 const path = require('node:path');
@@ -14,6 +14,7 @@ const path = require('node:path');
   try {
     await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
+    await require('./background-fixture.cjs').install(page, true);
     const results = await page.evaluate(async () => {
       const checks = []; window.preparationChecks = checks;
       const assert = (name, condition) => { if (!condition) throw Error(name); checks.push(name); };
@@ -96,10 +97,10 @@ const path = require('node:path');
       const defaultPixel=await sampleBackground();
       assert('Default export retains original background detail at the fitted source position',defaultPixel.every((value,i)=>Math.abs(value-[178,206,228,255][i])<=1));
       assert('Remove BG is available but inactive after automatic fitting',!removeBgButton.disabled && removeBgButton.getAttribute('aria-pressed')==='false');
-      removeBgButton.click();
+      await toggleSelectedLayerBackgrounds();
       assert('Manual Remove BG still removes the background without changing fitted geometry',backgroundItem.removeBg
         && ['x','y','width','height'].every(key=>near(getBaseLayerRect(backgroundItem)[key],backgroundRect[key])) && (await sampleBackground()).slice(0,3).every(value=>value===255));
-      removeBgButton.click();
+      await toggleSelectedLayerBackgrounds();
       assert('Restoring the background returns the same default pixels and fitted geometry',!backgroundItem.removeBg
         && (await sampleBackground()).every((value,i)=>value===defaultPixel[i]) && ['x','y','width','height'].every(key=>near(getBaseLayerRect(backgroundItem)[key],backgroundRect[key])));
       backgroundItem.watermarkEnabled=originalWatermark;drawActive();
@@ -138,7 +139,7 @@ const path = require('node:path');
       selectImage(2);
       const close = files[2], previousRemovals = removals;
       assert('Remove BG is disabled on a Close View layer', removeBgButton.disabled);
-      toggleSelectedLayerBackgrounds();
+      await toggleSelectedLayerBackgrounds();
       document.dispatchEvent(new KeyboardEvent('keydown', {key: 'b', code: 'KeyB', ctrlKey: true, bubbles: true}));
       assert('Selected action and Ctrl+B never remove a Close View background', !close.removeBg && removals === previousRemovals);
       applyImageScale(20);
@@ -158,13 +159,13 @@ const path = require('node:path');
       close.layers.push({...copy, id: createLayerId(), file: sources[0], image: other.image, closeView: false, removeBg: false});
       normalizeLayerOrder(close); selectedLayerIds = new Set(close.layers.map(layer => layer.id));
       const ordinary = close.layers.at(-1);
-      toggleSelectedLayerBackgrounds();
+      await toggleSelectedLayerBackgrounds();
       assert('Mixed selection removes only eligible layer backgrounds', ordinary.removeBg && close.layers.filter(isCloseViewImage).every(layer => !layer.removeBg));
-      toggleSelectedLayerBackgrounds();
+      await toggleSelectedLayerBackgrounds();
       assert('Second mixed-selection toggle restores eligible backgrounds', !ordinary.removeBg);
       close.layers = []; close.layerOrder = ['base']; selectedLayerIds = new Set(['base']);
       const stalePreparation = other.smartPrep;
-      removeAllBgButton.click();
+      await removeAllLayerBackgrounds();
       assert('Remove All BG skips filename and metadata Close Views but processes ordinary images', !files[2].removeBg && !files[3].removeBg && files[0].removeBg && files[1].removeBg && files[4].removeBg);
       // Even stale edit state must never send Close Views through removal on export.
       const erased = document.createElement('canvas'); erased.width = 400; erased.height = 300;

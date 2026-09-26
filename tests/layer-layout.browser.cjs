@@ -12,6 +12,7 @@ const path = require('node:path');
   try {
     await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
+    await require('./background-fixture.cjs').install(page);
     const checks = await page.evaluate(async () => {
       const checks = []; window.layerLayoutChecks = checks;
       const check = (name, ok) => { if (!ok) throw Error(name); checks.push(name); };
@@ -37,7 +38,7 @@ const path = require('node:path');
       const defaultRect=getBaseLayerRect(item); duplicateSelectedLayers(); const defaultCopy=item.layers[0];
       check('New prepared images and their duplicates keep original backgrounds at the same fitted size',!item.removeBg && item.originalBackgroundRestored
         && !defaultCopy.removeBg && getAddedLayerSource(defaultCopy)===defaultCopy.sourceSnapshot.original && equalRect(defaultRect,getAddedLayerRect(defaultCopy),35));
-      clearLayers(); toggleSelectedLayerBackgrounds();
+      clearLayers(); await toggleSelectedLayerBackgrounds();
       for (const rotation of [0, 15, 90]) {
         clearLayers(); Object.assign(item, {scale: 73, rotation, mirror: true, flipY: true, shadow: true, shadowAngle: 35, shadowDistance: 23, shadowStrength: 80});
         const before = getBaseLayerRect(item), geometry = smartProductGeometry(item); duplicateSelectedLayers();
@@ -65,9 +66,9 @@ const path = require('node:path');
       check('PNG export of the duplicated fitted product has the same pixel bounds and silhouette', ['left', 'top', 'right', 'bottom'].every(key => originalPixels[key] === copiedPixels[key])
         && Math.abs(originalPixels.count - copiedPixels.count) < originalPixels.count * .002);
       item.baseRemoved = false; selectedLayerIds = new Set([exactCopy.id]);
-      const snapshot = getAddedLayerSource(exactCopy); toggleSelectedLayerBackgrounds();
+      const snapshot = getAddedLayerSource(exactCopy); await toggleSelectedLayerBackgrounds();
       check('Prepared duplicate can restore its original background without changing the crop', !exactCopy.removeBg && getAddedLayerSource(exactCopy) === exactCopy.sourceSnapshot.original);
-      toggleSelectedLayerBackgrounds();
+      await toggleSelectedLayerBackgrounds();
       check('Prepared duplicate can restore the exact cutout again', exactCopy.removeBg && getAddedLayerSource(exactCopy) === snapshot);
       selectedLayerIds = new Set(['base']); copySelectedLayers(); await pasteCopiedLayers();
       const pasted = item.layers.at(-1);

@@ -11,6 +11,7 @@ const path = require('node:path');
   try {
     await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
+    await require('./background-fixture.cjs').install(page);
     const checks = await page.evaluate(async () => {
       await historyReady;
       const checks = []; window.historyChecks = checks;
@@ -81,20 +82,20 @@ const path = require('node:path');
       check('Repeated preparation shares immutable pixels while keeping placement settings independent', reused.foreground === second.smartPrep.foreground && reused.background === second.smartPrep.background
         && reused !== second.smartPrep && reused.safeArea !== second.smartPrep.safeArea && reused.bounds !== second.smartPrep.bounds);
       selectImage(files.indexOf(second)); selectedLayerIds = new Set(['base']);
-      const prepared = second.smartPrep, rect = getBaseLayerRect(second); removeBgButton.click();
+      const prepared = second.smartPrep, rect = getBaseLayerRect(second); await toggleSelectedLayerBackgrounds();
       check('Remove BG retains the exact smart-fitted size, center and preparation', second.removeBg && second.smartPrep === prepared && sameRect(rect, getBaseLayerRect(second)));
       const renderPixel = async item => {
         const bitmap = await createImageBitmap(await createExportBlob(item, 'png')), work = document.createElement('canvas'); work.width = bitmap.width; work.height = bitmap.height;
         const context = work.getContext('2d'); context.drawImage(bitmap, 0, 0); bitmap.close();
         return [...context.getImageData(100, 500, 1, 1).data];
       };
-      second.watermarkEnabled = false; drawActive(); const removedPixel = await renderPixel(second); removeBgButton.click(); const restoredPixel = await renderPixel(second);
+      second.watermarkEnabled = false; drawActive(); const removedPixel = await renderPixel(second); await toggleSelectedLayerBackgrounds(); const restoredPixel = await renderPixel(second);
       check('Background pixels change while the product geometry remains fixed', removedPixel.slice(0, 3).every(value => value === 255) && restoredPixel[0] < 255 && sameRect(rect, getBaseLayerRect(second)));
       undo(); check('Undo background restoration restores removal without resizing', second.removeBg && sameRect(rect, getBaseLayerRect(second))); redo();
-      duplicateSelectedLayers(); const cutout = second.layers.at(-1), cutoutRect = getAddedLayerRect(cutout); selectedLayerIds = new Set([cutout.id]); removeBgButton.click();
-      check('Prepared duplicate background removal keeps its exact size and position', cutout.removeBg && sameRect(cutoutRect, getAddedLayerRect(cutout))); removeBgButton.click();
+      duplicateSelectedLayers(); const cutout = second.layers.at(-1), cutoutRect = getAddedLayerRect(cutout); selectedLayerIds = new Set([cutout.id]); await toggleSelectedLayerBackgrounds();
+      check('Prepared duplicate background removal keeps its exact size and position', cutout.removeBg && sameRect(cutoutRect, getAddedLayerRect(cutout))); await toggleSelectedLayerBackgrounds();
       check('Prepared duplicate background restoration also keeps its exact size and position', !cutout.removeBg && sameRect(cutoutRect, getAddedLayerRect(cutout)));
-      const backgrounds = files.map(item => item.removeBg); removeAllBgButton.click(); undo();
+      const backgrounds = files.map(item => item.removeBg); await removeAllLayerBackgrounds(); undo();
       check('Remove All BG restores the entire batch in one undo', files.every((item, index) => item.removeBg === backgrounds[index])); redo();
       selectedBatchImageIds = new Set([first.id, second.id]); checkpointHistory();
       const oldWatermarks = [first, second].map(item => item.watermarkTemplateId); await selectWatermarkTemplate(3, findListingTemplate(3, 'Normal').template.id); undo();

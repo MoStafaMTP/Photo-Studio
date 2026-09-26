@@ -2,7 +2,7 @@
 
 Photo Studio is a browser-based product-image editor and eBay listing preparation tool. It supports batch editing, layered compositions, reusable watermark libraries, automatic filename-based watermark selection, and smart product positioning inside watermark-safe areas.
 
-The application runs locally in the browser with plain HTML, CSS, and JavaScript. It has no build step, framework, backend, or package dependency.
+The application runs locally in the browser with plain HTML, CSS, and JavaScript, without a build step or backend. Manual background removal lazily downloads an AI model and ONNX Runtime Web; photos are processed on the device.
 
 ## Current milestone
 
@@ -60,8 +60,8 @@ Implemented on September 26, 2026: Full Screen/Grid views, an icon sidebar besid
 - Use `Delete` to remove selected layers, `Ctrl + C`/`Ctrl + V` to copy and paste them, `Ctrl + Enter` to center them, and `Ctrl + B` to toggle their backgrounds off or on.
 - Per-layer shadows with opacity, angle, and distance controls.
 - Remove BG and Ctrl+B toggle selected layers between the cutout and their original background. The button stays enabled and highlighted while removal is on, with a restore tooltip and accessible pressed state. A single remaining layer can still be toggled after its selection handles are cleared; multiple layers require an explicit selection. Ctrl+B also works from numeric editing controls. Remove All BG processes the complete batch; Close View sources are skipped.
-- Remove BG follows background-colored areas connected to the image border, preserving matching colors inside the product. Conservative color/edge limits, corner-outlier rejection and an unchanged-image fallback reduce accidental subject removal; existing transparent backgrounds are respected.
-- Manual and workflow cutouts recover fractional edge opacity and remove background color mixed into edge pixels, using nearby product colors. Contour smoothing uses that soft mask rather than a hard, square erosion, retaining a one-pixel inset and gradual inward transition on broad edges. Thin details and internal texture/translucency are protected. Large workflow masks retain fractional coverage when enlarged; product pixels stay at original resolution.
+- Remove BG uses local AI subject detection with edge-guided opacity refinement and color-spill cleanup, preserving source resolution and existing transparent cutouts. It is separate from the unchanged Listing sizing analysis. See [AI background removal](AI_BACKGROUND_REMOVAL.md) for dependencies, limitations and verification.
+- First removal downloads a roughly 170 MiB model, saved in browser storage for reuse, plus runtime assets. A cancelable progress dialog shows download and batch progress. Errors/cancellation leave the entire selection unchanged; a successful selection or batch is one Undo step. CPU processing can take tens of seconds per new image.
 - Remove BG after Apply Workflow keeps the fitted product's size, center, rotation and placement. Restoring its background renders the actual uploaded source aligned to that product, rather than only showing the reconstructed backdrop. Prepared duplicates retain the current background state and their crop, and repeated toggles reuse the saved cutout.
 - Session-wide Undo/Redo records each small movement, wheel/input adjustment, shadow, background, watermark, layer and canvas edit. Uploads, batch duplication/deletion, reset and Apply Workflow are reversible, including generated unmain images. There is no fixed 50-step limit. Use Ctrl+Z, Ctrl+Y, or Ctrl+Shift+Z.
 
@@ -142,6 +142,8 @@ Then open <http://localhost:8000/>.
 | --- | --- |
 | `index.html` | Application shell and Listing interface. |
 | `script.js` | Editor, layers, watermark library, smart preparation, and export logic. |
+| `background-removal.js` | Local AI inference worker, model download/cache and source-resolution edge matting. |
+| `AI_BACKGROUND_REMOVAL.md` | Background-removal behavior, dependencies/licenses, privacy, deployment and validation. |
 | `editor-history.js` | Whole-session edit history, state restoration and saved-watermark undo persistence. |
 | `styles.css` | Base editor styling. |
 | `viewport.css` | Editor and Listing UI styling. |
@@ -176,6 +178,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. They are exempt from safe-area fitting and the 50px inset so that their original size and background are preserved. A source larger than the output canvas can extend beyond its edges; increase the output dimensions when needed. Manual enlargement is available, but shrinking below 100% and background removal are blocked for Close View sources and their layer/batch copies.
 
 ## Validation
+
+The AI update was tested with real inference on two supplied seat-cover photos, inspected as transparent PNGs and against a dark background. Editor/geometry regression suites use deterministic masks and await async removal; their heuristic pixel tests describe the legacy helper and unchanged Listing analysis, not neural accuracy. See [AI background removal validation](AI_BACKGROUND_REMOVAL.md#validation).
 
 The original-background default passed 191 checks across preparation (30), Normal-template fitting (54), layer layout (31), background toggles (17) and history (59). All 1,368 preparation placement cases retain the previous sizing/positioning. Pixel checks confirm that background detail from the original source survives export at the fitted location and can still be removed/restored manually without a size change. New prepared duplicates and generated unmain images also retain backgrounds by default.
 

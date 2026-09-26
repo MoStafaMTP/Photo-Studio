@@ -12,6 +12,7 @@ const os = require('node:os');
   try {
     await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
+    await require('./background-fixture.cjs').install(page);
     await page.evaluate(() => historyReady);
     await page.evaluate(async () => {
       listingAutoPrompted = true;
@@ -211,9 +212,9 @@ const os = require('node:os');
       check('Group resize includes editable text geometry',Math.abs(copy.x-original.x-xDistance*.8)<.0001 && copy.scale===80 && original.scale===80);
       centerSelectedLayerEntities('both'); const bounds=selectedLayerBounds(item);
       check('Text group centers on both canvas axes',Math.abs(bounds.x-788)<.0001 && Math.abs(bounds.y-788)<.0001);
-      selectedLayerIds=new Set(['base',original.id]); toggleSelectedLayerBackgrounds();
+      selectedLayerIds=new Set(['base',original.id]); await toggleSelectedLayerBackgrounds();
       check('Mixed background removal skips text layers',item.removeBg && !original.removeBg);
-      removeAllBgButton.click(); check('Remove All BG skips text and Close View',!original.removeBg && !files[2].removeBg);
+      await removeAllLayerBackgrounds(); check('Remove All BG skips text and Close View',!original.removeBg && !files[2].removeBg);
       await duplicateBatchImage(0); const duplicate=files[1];
       check('Batch duplicate retains editable text and independent identities',duplicate.layers.length===3 && duplicate.layers.every(isTextLayer) && duplicate.layers[0]!==original && duplicate.layers[0].id!==original.id && duplicate.layers[0].fontFamily===original.fontFamily);
       selectImage(0); selectedLayerIds=new Set(['base',copy.id,pasted.id]); removeSelectedLayers();

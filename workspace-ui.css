@@ -141,3 +141,11 @@ button:focus-visible,summary:focus-visible,.text-settings input:focus-visible,.t
  .grid-image-name { flex-basis:100%; }
  .editor-footer { grid-column:1; grid-row:3; }
 }
+/* Background removal is cancelable and cannot mix with other editing actions. */
+.background-progress { width: min(410px, calc(100vw - 40px)); padding: 26px; border: 1px solid #d1d1d6; border-radius: 20px; color: #1c1c1e; background: #fff; box-shadow: 0 16px 60px #0003; font: 14px/1.5 system-ui, sans-serif; }
+.background-progress::backdrop { background: #0005; }
+.background-progress h2 { margin: 0 0 16px; font-size: 20px; }
+.background-progress-detail { min-height: 42px; }
+.background-progress-count { color: #636366; font-size: 12px; }
+.background-progress button { width: 100%; margin-top: 12px; padding: 11px 16px; border: 0; border-radius: 10px; background: #f2f2f7; color: #007aff; font: inherit; font-weight: 600; cursor: pointer; }
+.background-progress button:focus-visible { outline: 2px solid #007aff; outline-offset: 3px; }

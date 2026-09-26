@@ -8,10 +8,11 @@ const path = require('node:path');
     args: ['--allow-file-access-from-files']});
   const page = await browser.newPage({viewport: {width: 1920, height: 1080}}), errors = [], checks = [];
   page.on('pageerror', error => errors.push(error.message));
-  const check = async (name, predicate) => { if (!await page.evaluate(predicate)) throw Error(name); checks.push(name); };
+  const check = async (name, predicate) => { await page.waitForFunction(() => !backgroundRemovalBusy); if (!await page.evaluate(predicate)) throw Error(name); checks.push(name); };
   try {
     await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
+    await require('./background-fixture.cjs').install(page);
     await page.evaluate(async () => { await historyReady; listingAutoPrompted = true; });
     const inputPaths = process.argv.slice(2);
     if (inputPaths.length) await page.locator('#image-input').setInputFiles(inputPaths);

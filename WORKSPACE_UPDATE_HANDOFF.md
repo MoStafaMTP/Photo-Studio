@@ -102,6 +102,7 @@ Text must render consistently in the main canvas, left-side thumbnails, grid pre
 - Uploaded and duplicated image layers retain their exact scale, position, background state and independent settings.
 - Remove BG and Ctrl+B remain toggles; restoring an original background must not resize or move the product.
 - Apply Workflow keeps the original background by default, using the same analyzed bounds and sizing logic. Manual background removal remains available without changing fitted geometry.
+- September 27: Remove BG uses a separate local AI segmentation worker with refined edges, cancelable progress and atomic batch history. It preserves original backgrounds by default, Close View exemptions, sizing and toggling. The model download, licenses and validation are documented in [AI_BACKGROUND_REMOVAL.md](AI_BACKGROUND_REMOVAL.md).
 - Close View images retain their original background and native-size protections.
 - Listing workflows, CPIS metadata precedence, template matching, 50px safe-area spacing and saved-watermark persistence remain functional.
 - DSA eBay skips material selection and DT/DB unmain generation, and exports directly into its ZIP without subfolders. Other accounts retain their current export behavior.

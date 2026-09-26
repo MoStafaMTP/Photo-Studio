@@ -12,6 +12,7 @@ const fs = require('node:fs');
   try {
     await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
+    await require('./background-fixture.cjs').install(page);
     const result = await page.evaluate(async () => {
       await historyReady;
       const checks = []; window.smoothingChecks = checks;
@@ -77,10 +78,10 @@ const fs = require('node:fs');
       const file = new File([await new Promise(resolve => source.toBlob(resolve))], 'smooth.png', {type: 'image/png'});
       const [item] = addImages([file]); await item.image.decode(); selectImage(files.indexOf(item));
       item.originalSize = true; item.watermarkEnabled = false; backgroundMode = 'none'; resizeWidth.value = resizeHeight.value = 500; drawActive();
-      const rect = getBaseLayerRect(item); removeBgButton.click();
+      const rect = getBaseLayerRect(item); await toggleSelectedLayerBackgrounds();
       check('Remove BG keeps the exact image size and position', ['x', 'y', 'width', 'height'].every(k => getBaseLayerRect(item)[k] === rect[k]));
       const firstRamp = Array.from({length: 8}, (_, x) => pixel(getImageSource(item), 30 + x, 128)[3]).join();
-      removeBgButton.click(); removeBgButton.click();
+      await toggleSelectedLayerBackgrounds(); await toggleSelectedLayerBackgrounds();
       check('Repeated removal does not progressively soften or shrink the cutout', firstRamp === Array.from({length: 8}, (_, x) => pixel(getImageSource(item), 30 + x, 128)[3]).join());
       undo(); check('Undo restores the original background', !item.removeBg); redo();
       check('Redo restores the same softened edge', item.removeBg && firstRamp === Array.from({length: 8}, (_, x) => pixel(getImageSource(item), 30 + x, 128)[3]).join());

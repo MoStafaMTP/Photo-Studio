@@ -11,6 +11,7 @@ const path = require('node:path');
   try {
     await page.route('https://fonts.googleapis.com/**', route => route.abort());
     await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href);
+    await require('./background-fixture.cjs').install(page);
     const checks = await page.evaluate(async () => {
       await historyReady;
       const checks = []; window.cutoutChecks = checks;
@@ -84,13 +85,13 @@ const path = require('node:path');
       await addLayerImages([await file(portrait, 'portrait.png')]); const p = item.layers.at(-1);
       check('Non-square layer imports fit proportionally at 100%', getAddedLayerDrawRect(p).height === 1576 && getAddedLayerDrawRect(p).width === 788 && imageScaleValue.value === '100');
       await addLayerImages([await file(source, 'DOPTcv.png')]); const cv = item.layers.at(-1);
-      toggleSelectedLayerBackgrounds(); applyImageScale(50);
+      await toggleSelectedLayerBackgrounds(); applyImageScale(50);
       check('Close View layers retain native dimensions and background protection', getAddedLayerDrawRect(cv).width === 96 && cv.scale === 100 && !cv.removeBg && getAddedLayerSource(cv) === cv.image);
       selectedLayerIds = new Set(['base']); item.layers = []; item.layerOrder = ['base'];
       item.smartPrep = createSmartPreparation(item.image, area); item.watermarkEnabled = false; item.originalSize = false; drawActive();
-      const beforeRemove = getBaseLayerRect(item); toggleSelectedLayerBackgrounds();
+      const beforeRemove = getBaseLayerRect(item); await toggleSelectedLayerBackgrounds();
       check('Trimmed workflow cutouts still preserve size and position on Remove BG', equalRect(beforeRemove, getBaseLayerRect(item)));
-      toggleSelectedLayerBackgrounds(); check('Restoring the background preserves the same layout', equalRect(beforeRemove, getBaseLayerRect(item)));
+      await toggleSelectedLayerBackgrounds(); check('Restoring the background preserves the same layout', equalRect(beforeRemove, getBaseLayerRect(item)));
       item.smartPrep = null; item.removeBg = true; item.processed = null; item.scale = 100; item.originalSize = true;
       resizeWidth.value = resizeHeight.value = 360; backgroundMode = 'none'; exportFormat.value = 'png'; drawActive();
       const output = await createImageBitmap(await createExportBlob(item, 'png')), exported = makeCanvas(360, 360); exported.getContext('2d').drawImage(output, 0, 0); output.close();
