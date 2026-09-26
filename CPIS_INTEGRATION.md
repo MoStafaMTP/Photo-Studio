@@ -53,6 +53,10 @@ An optional per-image `templateName` supplies an exact account-template choice r
 
 Color is preserved and displayed as CPIS context. Photo Studio does not infer materials/templates from color or recolor images. CPIS can supply `templateName` when it has already resolved a color-specific template installed in the selected account.
 
+Apply Workflow creates a local Normal-template `unmain` output for each resolved DT/PT `main` image, preserving the original image and its template. The new filename appends ` unmain` before the extension. CPIS metadata, not filename substrings, controls this rule; DPTB remains Full Set and is excluded. Copies appear in the editor and exports, with their own editor IDs, `unmain` subtype and `generatedFromImageId` source links in the plan. Existing generated copies or matching uploaded unmain files are reused. Photo Studio does not invent CPIS IDs or change composite/listing membership.
+
+Landscape uploads and products wider than their height remain vertically centered in the safe area. Only portrait Normal-template products use the optional upper-center enlargement; Close View rules remain unchanged.
+
 ## Browser API
 
 The static editor exposes `window.PhotoStudioIntegration` after `script.js` loads. This is a same-page browser API, not an HTTP service or a cross-origin message listener. CPIS's host integration must deliver the payload and File objects to this API; there is no automatic connection to a CPIS server.
@@ -74,16 +78,20 @@ const manifest = PhotoStudioIntegration.getMetadata();
 
 - `importImages(payload, imageFiles)` validates metadata and file matching before adding a new batch, waits for decoding, and opens the Listing review. It rejects a non-empty editor so existing work is not replaced. Failed images remain visible for replacement/removal and cannot be processed.
 - `setMetadata(payload)` synchronously validates and annotates the entire current batch, then opens the review. It does not process images or alter existing pixel edits/watermarks until Apply Workflow is invoked.
-- `getPlan()` returns `{ready, account, material, color, images}`. Each image includes `imageId`, optional CPIS `id`, filename, variation, subtype, kind, source (`metadata`/`filename`), templateName, closeView, and error.
+- `getPlan()` returns `{ready, account, material, color, images}`. Each image includes `imageId`, optional CPIS `id`, filename, variation, subtype, kind, source (`metadata`/`filename`/`generated`), templateName, closeView, and error. Planned DT/PT copies also appear before processing with `pendingGeneration: true` and a `generatedFromImageId` link. After Apply Workflow they become ordinary editable images and pendingGeneration is false.
 - `getMetadata()` returns the current manifest plus stable editor `imageId` values, or null in filename mode. Optional per-image CPIS `id` and `templateName` values are retained.
 - `applyWorkflow()` returns a Promise for the resulting plan. Validation or processing failures reject it. The existing Apply Workflow button uses the same path.
 - `clearMetadata()` explicitly returns the batch to local filename detection and unlocks the account/material selectors. Existing edits remain until the workflow is applied again.
 
 The payload must cover every uploaded image exactly once. Initial matching uses the original File.name, case-sensitively; filenames are identity keys here, not classification hints. If original filenames repeat, include each editor `imageId` to disambiguate. The filename and imageId must agree. An optional CPIS `id` is a preserved source identifier, not a matching key, and may be shared by an editor duplicate and its source.
 
+Locally generated unmain copies do not have to be included when CPIS resends metadata for its original uploads. Missing generated entries inherit the source's resolved variation and retain subtype `unmain`. `getMetadata()` includes the generated images with their actual filenames and editor IDs so a complete manifest can also be round-tripped.
+
 One editor batch has one account/material/color context. In metadata mode those values are authoritative, and the account/material selectors are locked. Uploading additional images requires updated metadata; the workflow blocks instead of guessing for unclassified files. Batch duplicates inherit metadata; deletion removes only that batch item. Undo/redo of visual edits does not change CPIS classification.
 
 After processing, use the existing layer controls and per-image tools for manual corrections. Export and Export Batch render the edited canvas state; they do not re-run automatic classification or preparation. Existing exports remain image files/ZIPs, not a CPIS asset-upload service.
+
+Individual and batch image filenames retain their stems without a Photo Studio suffix. ZIP filename collisions are numbered so no images overwrite one another on extraction. The archive itself keeps its account-folder name.
 
 ## JSON import in the UI
 

@@ -88,7 +88,7 @@ const path = require('node:path');
       const wide=document.createElement('canvas');wide.width=400;wide.height=320;wide.getContext('2d').fillRect(0,0,400,320);
       item.smartPrep={...narrow,foreground:wide,bounds:{x:0,y:0,width:400,height:320}};
       const wideBefore=baseline(),wideAfter=smartProductGeometry(item);
-      assert('Wide product cannot crowd corner logos or lose bottom clearance when the PDF margin is shallow',clearanceViolations(wideAfter)===0&&wideAfter.y+wideAfter.height/2<=wideBefore.y+wideBefore.height/2+.001);
+      assert('Wide product stays vertically centered without crowding corner logos or losing bottom clearance',near(wideAfter.y,wideBefore.y)&&clearanceViolations(wideAfter)===0&&wideAfter.y+wideAfter.height/2<=wideBefore.y+wideBefore.height/2+.001);
       item.smartPrep=narrow;
       const area=item.smartPrep.safeArea,before=baseline();item.smartPrep.safeArea={...area,source:'custom'};
       assert('Explicit custom top margin is respected',near(smartProductGeometry(item).y,before.y)&&near(smartProductGeometry(item).height,before.height));item.smartPrep.safeArea=area;

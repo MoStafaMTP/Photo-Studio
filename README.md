@@ -52,6 +52,7 @@ Detailed handoffs are available in:
 - Detect `DB`, `PB`, `DPB`, `DT`, `PT`, `DPT`, `DTB`, `PTB`, and `DPTB` filename codes.
 - Support DOPT/DOPB as shared image types and `main`, `unmain`, `cv`, `io`, and `numbered` subtypes. Only primary `main` images use Main/Passenger templates; all other roles use Normal unless CPIS supplies an explicit template choice.
 - Select Main, Passenger Side, or Normal templates automatically.
+- Apply Workflow creates an additional editable Normal-template image for each DT/PT main source, named with ` unmain` before the extension (for example, `DT unmain.jpg`). Originals keep their templates. The review shows planned copies, and repeated runs reuse existing copies. Full Set uses `DPTB` and does not create a DT/PT copy.
 - Review every image and resolved template before processing.
 - Close View filenames (`Close View`, `Close_View`, `Close-View`, or `CloseView`, case-insensitive) use the account's Normal template and keep the source image at its original pixel size with its background intact. This also takes priority when the filename contains a part code such as `DT`.
 - Use Apply Workflow to prepare the images, then review them in the editor and use Export Batch to download a ZIP.
@@ -71,7 +72,7 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 - Analyze each watermark's alpha channel to find its largest clear horizontal band.
 - Fit the complete product proportionally inside that safe area without cropping.
 - Keep a minimum 50 output-pixel gap inside template margins. Normal templates can grow products upward by up to 8% into clear space between the top logos, while checking the actual silhouette for 50px artwork clearance and preserving proportions and bottom spacing. Custom margins and full-image fallbacks retain the ordinary fit.
-- Center the product horizontally; ordinary fitting also centers vertically in the safe area, while Normal templates use available upper-center space.
+- Center the product horizontally and vertically in the safe area. Only portrait Normal-template products use the available upper-center space; landscape uploads and products wider than their height remain vertically centered, including after rotation.
 - Review and edit top and bottom margins in the Watermark Template Manager.
 - Bundled templates use the account/template margins from `Template Sizes.pdf`, saved in `watermark-safe-areas.js` at the native 1500 × 1500 template size. Margins follow the watermark's centered cover scaling; the additional 50px gap stays fixed in output pixels, independent of browser zoom.
 - Older automatic measurements are replaced by the shared defaults; explicit custom margins are preserved. **Use default** restores the supplied margins, and **Analyze** saves a new measurement.
@@ -82,6 +83,7 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 
 - JPG, PNG, and WebP output.
 - Export the current image.
+- Keep uploaded image filenames without adding `Photo Studio`. The chosen format determines the extension. ZIP name collisions receive a number such as `DT (2).jpg` so every image remains available.
 - Export the complete batch as a browser-generated ZIP.
 - Batch ZIP names match the applied template's account folder, such as `Elite.zip`, `DIY.zip`, or `US Auto Nation.zip`. Mixed accounts use their folder names joined with ` + `; batches without an assigned template keep `photo-studio-batch.zip`.
 - Export prepared eBay listing images with the header's current-image or Export Batch controls.
@@ -135,6 +137,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 ## Validation
 
 Normal-template fitting passed 54 checks in `tests/normal-template-fit.browser.cjs`, including native-pixel 50px header clearance for all seven Normal templates at four output sizes, rotation/flips, wide products, custom margins, full-width banners, Close View preservation and export. The sample Elite product grew 8% and its top whitespace decreased from 229px to 103px.
+
+The DT/PT output workflow has 26 checks in `tests/listing-unmain.browser.cjs`, covering pending-copy review, actual Apply Workflow/individual/ZIP downloads, independent editing and assets, repeat/delete behavior, existing unmain files, missing templates/copy failures, clean filenames, DPTB, landscape centering, CPIS overrides and metadata round trips, and filename collisions. The metadata unit suite includes eight tests.
 
 The updated preparation suite passed 24 browser checks, including 1,368 placement cases across all 57 templates, four output sizes, two product proportions and three rotations; JPG/PNG/WebP pixel checks; prepared-layer movement/centering; Close View background and size protection; duplicates; and impossible-margin validation. Run `node tests/listing-preparation.browser.cjs` and `node tests/normal-template-fit.browser.cjs` with Playwright available for testing. Optional `PLAYWRIGHT_MODULE` and `BROWSER_EXECUTABLE` environment variables can point to existing installations.
 

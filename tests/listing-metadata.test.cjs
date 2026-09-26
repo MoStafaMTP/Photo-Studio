@@ -51,6 +51,7 @@ test('invalid supplied metadata is rejected instead of guessing from filenames',
 test('local fallback understands compact subtypes and shared filenames', () => {
   for (const [name, variation, subtype] of [
     ['DT.jpg','DT','main'],['DT1.jpg','DT','numbered'],['DTcv.jpg','DT','cv'],['DTio.jpg','DT','io'],['DT unmain.jpg','DT','unmain'],
+    ['truck DT black unmain.jpg','DT','unmain'],['PT copy unmain (2).png','PT','unmain'],
     ['DOPTcv.png','DOPT','cv'],['DOPTio.jpg','DOPT','io'],['DOPT2.webp','DOPT','numbered'],
     ['DOPBcv.png','DOPB','cv'],['DOPBio.jpg','DOPB','io'],['DOPB12.png','DOPB','numbered'],['truck_DPTB.png','DPTB','main']
   ]) {
@@ -59,6 +60,13 @@ test('local fallback understands compact subtypes and shared filenames', () => {
     assert.equal(actual.subtype, subtype, name);
     assert.equal(actual.source, 'filename');
   }
+});
+
+test('Full Set uses DPTB and is distinct from DT or PT', () => {
+  const fullSet = metadata.resolveImage(image('DPTB', 'main'));
+  assert.equal(fullSet.code, 'DPTB');
+  assert.equal(fullSet.label, 'Full Set · Main');
+  assert.equal(metadata.detectFilename('DPTB.jpg').variation, 'DPTB');
 });
 test('fallback keeps long Close View names and does not match embedded words', () => {
   for (const name of ['Close View.png','truck_close_view_02.jpg','DT-Close-View.webp','seat-CloseView1.png']) assert.equal(metadata.detectFilename(name).closeView,true);

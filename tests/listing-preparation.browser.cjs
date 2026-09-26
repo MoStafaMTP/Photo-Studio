@@ -38,7 +38,7 @@ const path = require('node:path');
       createBackgroundRemovedSource = (...args) => { removals++; return removeSource(...args); };
       createSmartPreparation = (...args) => { separations++; return prepareSource(...args); };
       await applyListingWatermarks();
-      assert('Only non-Close View images enter automatic background separation', separations === 3 && removals === 0);
+      assert('Only non-Close View images and the new DT unmain copy enter automatic background separation', separations === 4 && removals === 0);
       assert('Metadata determines Close View handling before filename fallback', !files[3].smartPrep && files[3].originalSize && files[4].smartPrep && !files[4].originalSize);
 
       // Normal templates can use the clear upper center; all other templates keep
@@ -58,7 +58,8 @@ const path = require('node:path');
                 smartPrep: {...base.smartPrep, safeArea}};
               const rect = smartProductGeometry(item);
               const normal = template.name === 'Normal';
-              if (!rect || !near(rect.x, width / 2) || (!normal && !near(rect.y, (top + bottom) / 2))
+              const landscape = base.image.naturalWidth > base.image.naturalHeight || rect.width > rect.height;
+              if (!rect || !near(rect.x, width / 2) || ((!normal || landscape) && !near(rect.y, (top + bottom) / 2))
                 || rect.y - rect.height / 2 < (normal ? 50 : top + 50) - .001 || rect.y + rect.height / 2 > bottom - 50 + .001
                 || rect.x - rect.width / 2 < 50 - .001 || rect.x + rect.width / 2 > width - 50 + .001) {
                 throw Error(`Gap/center failure: ${section.name}/${template.name}, ${width}x${height}, rotation ${rotation}`);

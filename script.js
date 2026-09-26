@@ -664,6 +664,8 @@ function normalHeaderMask(image, safeRect) {
 }
 function fitNormalTemplateTop(item, geometry) {
   const preparation = item.smartPrep;
+  const sourceSize = imageSourceSize(item.image);
+  const landscape = sourceSize.width > sourceSize.height || geometry.width > geometry.height;
   const template = findWatermarkTemplate(item.watermarkSection, item.watermarkTemplateId);
   if (isCloseViewImage(item) || item.originalSize || preparation.mode !== 'separated'
       || preparation.safeArea.source === 'custom' || normalizeListingTemplateName(template?.name) !== 'normal'
@@ -676,7 +678,7 @@ function fitNormalTemplateTop(item, geometry) {
   try {
     const header = normalHeaderMask(item.watermarkImage, geometry.safeRect);
     const top = geometry.y - geometry.height / 2;
-    const travel = Math.max(0, Math.min(canvas.height * .08, top - SMART_WATERMARK_GAP));
+    const travel = landscape ? 0 : Math.max(0, Math.min(canvas.height * .08, top - SMART_WATERMARK_GAP));
     const growth = Math.max(0, Math.min(.08, geometry.safeRect.width / geometry.width - 1, travel / geometry.height));
     const lift = travel - geometry.height * growth;
     const candidate = (amount) => {
@@ -711,9 +713,10 @@ function fitNormalTemplateTop(item, geometry) {
       // If a wide product already crowds a corner logo, retain a safe full-band fit.
       const safeTop = Math.max(geometry.safeRect.y, header.artworkBottom + header.samplingGap + 1 / header.scale);
       const safeBottom = geometry.y + geometry.height / 2;
-      if (safeTop < safeBottom) {
-        const factor = Math.min(1, (safeBottom - safeTop) / geometry.height);
-        adjustment = {y: (safeTop + safeBottom) / 2, width: geometry.width * factor, height: geometry.height * factor,
+      const availableHeight = landscape ? 2 * (geometry.y - safeTop) : safeBottom - safeTop;
+      if (availableHeight > 0) {
+        const factor = Math.min(1, availableHeight / geometry.height);
+        adjustment = {y: landscape ? geometry.y : (safeTop + safeBottom) / 2, width: geometry.width * factor, height: geometry.height * factor,
           drawWidth: geometry.drawWidth * factor, drawHeight: geometry.drawHeight * factor};
       }
     }
@@ -1713,10 +1716,10 @@ function createListingPlan() {
   const hasAccount = Boolean(cpisListingContext) || listingAccount.value !== '';
   const sectionIndex = cpisListingContext?.sectionIndex ?? (hasAccount ? Number(listingAccount.value) : -1);
   const materialRule = LISTING_MATERIAL_RULES[cpisListingContext?.materialKey || listingMaterial.value] || null;
-  const rows = files.map((item) => {
+  const rowForItem = (item) => {
     let detection, metadataError = null;
     try {
-      if (Object.prototype.hasOwnProperty.call(item, 'listingMetadata')) detection = PhotoStudioMetadata.resolveImage(item.listingMetadata);
+      if (Object.prototype.hasOwnProperty.call(item, 'listingMetadata')) detection = PhotoStudioMetadata.resolveImage(item.listingMetadata, item.generatedFromImageId ? 'generated' : 'metadata');
       else if (cpisListingContext) throw new Error(`CPIS metadata is missing for ${listingSourceName(item)}. Import updated metadata or choose Use filenames.`);
       else detection = detectListingImageType(listingSourceName(item));
     } catch (error) {
@@ -1727,7 +1730,27 @@ function createListingPlan() {
     const match = hasAccount && requestedTemplate ? findListingTemplate(sectionIndex, requestedTemplate, {allowAccountDefault: !explicitTemplate}) : {template: null, fallback: false};
     const imageReady = Boolean(item.image.complete && item.image.naturalWidth);
     return {item, detection, metadataError, imageReady, requestedTemplate, template: match.template, fallback: match.fallback};
-  });
+  };
+  const rows = files.map(rowForItem);
+  const stemOf = (name) => name.replace(/\.[^/.]+$/, '').trim().toLowerCase();
+  const usedNames = new Set(rows.map(row => stemOf(listingSourceName(row.item))));
+  for (const source of [...rows]) {
+    if (source.metadataError || source.item.generatedFromImageId || source.detection.subtype !== 'main'
+        || !['DT', 'PT'].includes(source.detection.variation)) continue;
+    const sourceName = listingSourceName(source.item), stem = sourceName.replace(/\.[^/.]+$/, '');
+    const unmainStem = `${stem} unmain`;
+    if (rows.some(row => row.item.generatedFromImageId === source.item.id
+        || (!row.item.generatedFromImageId && row.detection.subtype === 'unmain' && row.detection.variation === source.detection.variation
+          && stemOf(listingSourceName(row.item)) === unmainStem.toLowerCase()))) continue;
+    let uniqueStem = unmainStem, copyNumber = 2;
+    while (usedNames.has(uniqueStem.toLowerCase())) uniqueStem = `${unmainStem} (${copyNumber++})`;
+    usedNames.add(uniqueStem.toLowerCase());
+    const filename = uniqueStem + (sourceName.match(/\.[^/.]+$/)?.[0] || '');
+    const item = {...source.item, id: `unmain-${source.item.id}`, displayName: filename,
+      generatedFromImageId: source.item.id,
+      listingMetadata: PhotoStudioMetadata.normalizeImage({filename, variation: source.detection.variation, subtype: 'unmain'})};
+    rows.push({...rowForItem(item), pendingGeneration: true, generatedFrom: source.item});
+  }
   const missingCount = rows.filter((row) => hasAccount && materialRule && !row.metadataError && !row.template).length;
   const metadataErrorCount = rows.filter(row => row.metadataError).length;
   return {
@@ -1745,6 +1768,7 @@ function listingStatusForRow(plan, row) {
   if (!row.imageReady) return {text: row.item.image.complete ? 'Image failed' : 'Loading image', className: 'missing'};
   if (!plan.section || !plan.materialRule) return {text: 'Waiting', className: ''};
   if (!row.template) return {text: 'Missing', className: 'missing'};
+  if (row.pendingGeneration) return {text: 'New unmain copy', className: ''};
   if (row.detection.closeView) return {text: 'Original size', className: ''};
   const preparationMatches = row.item.smartPrep?.templateKey === listingTemplateKey(plan.sectionIndex, row.template);
   if (listingSmartPrep.checked && preparationMatches) {
@@ -1785,7 +1809,7 @@ function renderListingPreview() {
     else if (plan.metadataErrorCount) listingPlanSummary.textContent = `${plan.metadataErrorCount} image${plan.metadataErrorCount === 1 ? '' : 's'} need valid CPIS metadata`;
     else if (plan.rows.some(row => !row.imageReady)) listingPlanSummary.textContent = 'Waiting for images to load';
     else if (plan.missingCount) listingPlanSummary.textContent = `${plan.missingCount} missing template${plan.missingCount === 1 ? '' : 's'} in ${plan.section.name}`;
-    else listingPlanSummary.textContent = `${files.length} image${files.length === 1 ? '' : 's'} ready · ${plan.section.name}`;
+    else listingPlanSummary.textContent = `${plan.rows.length} image${plan.rows.length === 1 ? '' : 's'} ready · ${plan.section.name}${plan.rows.some(row => row.pendingGeneration) ? ' · includes new unmain copies' : ''}`;
   }
   listingApplyButton.disabled = listingBusy || !plan.ready;
   renderListingTemplateManager();
@@ -1823,7 +1847,15 @@ function prepareCPISMetadata(payload, items) {
     }
     seen.add(item); return {item, metadata};
   });
-  if (seen.size !== items.length) throw new Error('CPIS: include metadata for every uploaded image in this batch.');
+  if (items.some(item => !seen.has(item) && !item.generatedFromImageId)) throw new Error('CPIS: include metadata for every uploaded image in this batch.');
+  // CPIS only needs to resend metadata for its uploads; local output copies inherit
+  // the resolved variation and keep their explicit unmain role.
+  for (const item of items.filter(item => !seen.has(item))) {
+    const source = bindings.find(binding => binding.item.id === item.generatedFromImageId);
+    const metadata = PhotoStudioMetadata.normalizeImage({filename: item.file.name,
+      variation: source?.metadata.variation || item.listingMetadata?.variation, subtype: 'unmain'});
+    bindings.push({item, metadata});
+  }
   const context = Object.freeze({schemaVersion: 1, account: WATERMARK_SECTION_NAMES[sectionIndex], sectionIndex,
     material: normalized.material, materialKey: normalized.materialKey, color: normalized.color});
   return {context, bindings};
@@ -1871,7 +1903,9 @@ function getCPISPlan() {
   const plan = createListingPlan();
   return {ready: plan.ready, account: plan.section?.name || null, material: cpisListingContext?.material || plan.materialRule?.label || null,
     color: cpisListingContext?.color || null,
-    images: plan.rows.map(row => ({imageId: row.item.id, id: row.item.listingMetadata?.id || null, filename: row.item.file.name,
+    images: plan.rows.map(row => ({imageId: row.item.id, id: row.item.listingMetadata?.id || null,
+      filename: row.pendingGeneration ? listingSourceName(row.item) : row.item.file.name,
+      pendingGeneration: Boolean(row.pendingGeneration), generatedFromImageId: row.item.generatedFromImageId || null,
       variation: row.detection.variation || null, subtype: row.detection.subtype || null, kind: row.detection.kind || null,
       source: row.detection.source, templateName: row.template?.name || null, closeView: Boolean(row.detection.closeView),
       error: row.metadataError || (!row.imageReady ? 'Image is not ready.' : !row.template ? 'Template is not available.' : null)}))};
@@ -1909,6 +1943,28 @@ function setListingBusy(busy, action = 'Working…') {
   listingApplyButton.textContent = busy ? action : 'Apply Workflow';
   renderListingPreview();
 }
+function releaseGeneratedImageAssets(item) {
+  [item, ...(item.layers || [])].forEach(layer => URL.revokeObjectURL(layer.url));
+}
+async function materializeUnmainRow(row) {
+  const source = row.generatedFrom;
+  const file = new File([source.file], row.item.displayName, {type: source.file.type, lastModified: source.file.lastModified});
+  const loaded = [];
+  try {
+    const baseAsset = await loadDuplicateAsset(file); loaded.push(baseAsset);
+    const layers = [], idMap = new Map();
+    for (const layer of source.layers || []) {
+      const asset = await loadDuplicateAsset(layer.file); loaded.push(asset);
+      const id = createLayerId(); idMap.set(layer.id, id);
+      layers.push({...layer, ...asset, id, processed: null});
+    }
+    return {...row.item, ...baseAsset, file, processed: null, smartPrep: null, thumbnailDataUrl: null, layers,
+      layerOrder: allLayerEntityIds(source).map(id => id === 'base' ? 'base' : idMap.get(id)).filter(Boolean)};
+  } catch (error) {
+    loaded.forEach(asset => URL.revokeObjectURL(asset.url));
+    throw error;
+  }
+}
 async function applyListingWatermarks() {
   const plan = createListingPlan();
   if (!plan.ready) throw new Error(plan.rows.find(row => row.metadataError)?.metadataError || (plan.missingCount ? 'Required watermark templates are missing.' : plan.rows.some(row => !row.imageReady) ? 'Wait for all images to load successfully.' : 'Choose an account and material first.'));
@@ -1931,29 +1987,44 @@ async function applyListingWatermarks() {
     }
   }
   let fallbackCount = 0, preparedCount = 0, closeViewCount = 0;
-  for (let index = 0; index < plan.rows.length; index += 1) {
-    const row = plan.rows[index], key = listingTemplateKey(plan.sectionIndex, row.template), asset = templateAssets.get(key);
-    row.item.watermarkImage = asset.image;
-    row.item.watermarkEnabled = true;
-    row.item.watermarkOpacity = 100;
-    row.item.watermarkSection = plan.sectionIndex;
-    row.item.watermarkTemplateId = row.template.id;
-    row.item.originalSize = Boolean(row.detection.closeView);
-    if (row.detection.closeView) {
-      row.item.smartPrep = null; row.item.removeBg = false; row.item.processed = null;
-      row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
-      row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100;
-      closeViewCount += 1;
-    } else if (useSmartPreparation) {
-      listingApplyButton.textContent = `Preparing ${index + 1}/${plan.rows.length}`;
-      await new Promise((resolve) => window.requestAnimationFrame(resolve));
-      row.item.smartPrep = createSmartPreparation(row.item.image, asset.safeArea, key);
-      preparedCount += 1;
-      if (row.item.smartPrep.mode === 'fallback') fallbackCount += 1;
-      row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
-      row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100; row.item.fit = 'contain';
-      row.item.removeBg = false; row.item.processed = null;
-    } else row.item.smartPrep = null;
+  const generatedItems = [];
+  try {
+    for (const row of plan.rows.filter(row => row.pendingGeneration)) {
+      row.item = await materializeUnmainRow(row);
+      generatedItems.push(row.item);
+    }
+    for (let index = 0; index < plan.rows.length; index += 1) {
+      const row = plan.rows[index], key = listingTemplateKey(plan.sectionIndex, row.template), asset = templateAssets.get(key);
+      row.item.watermarkImage = asset.image;
+      row.item.watermarkEnabled = true;
+      row.item.watermarkOpacity = 100;
+      row.item.watermarkSection = plan.sectionIndex;
+      row.item.watermarkTemplateId = row.template.id;
+      row.item.originalSize = Boolean(row.detection.closeView);
+      if (row.detection.closeView) {
+        row.item.smartPrep = null; row.item.removeBg = false; row.item.processed = null;
+        row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
+        row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100;
+        closeViewCount += 1;
+      } else if (useSmartPreparation) {
+        listingApplyButton.textContent = `Preparing ${index + 1}/${plan.rows.length}`;
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+        row.item.smartPrep = createSmartPreparation(row.item.image, asset.safeArea, key);
+        preparedCount += 1;
+        if (row.item.smartPrep.mode === 'fallback') fallbackCount += 1;
+        row.item.rotation = 0; row.item.mirror = false; row.item.flipY = false;
+        row.item.offsetX = 0; row.item.offsetY = 0; row.item.scale = 100; row.item.fit = 'contain';
+        row.item.removeBg = false; row.item.processed = null;
+      } else row.item.smartPrep = null;
+    }
+    files.push(...generatedItems);
+  } catch (error) {
+    generatedItems.forEach(releaseGeneratedImageAssets);
+    throw error;
+  }
+  if (generatedItems.length) {
+    undoStack.length = 0; redoStack.length = 0; updateHistoryButtons();
+    plan.rows.forEach(row => { row.pendingGeneration = false; });
   }
   selectedWatermarkSection = plan.sectionIndex;
   activeWatermarkSection = plan.sectionIndex;
@@ -1964,7 +2035,8 @@ async function applyListingWatermarks() {
     ? ` Smart preparation completed${fallbackCount ? ` with ${fallbackCount} full-image fallback${fallbackCount === 1 ? '' : 's'}` : ''}.`
     : '';
   const closeViewMessage = closeViewCount ? ` ${closeViewCount} Close View image${closeViewCount === 1 ? '' : 's'} kept at original size with background intact.` : '';
-  setStatus(`Listing workflow applied to ${plan.rows.length} image${plan.rows.length === 1 ? '' : 's'} for ${plan.section.name}.${preparationMessage}${closeViewMessage}`);
+  const generatedMessage = generatedItems.length ? ` Added ${generatedItems.length} Normal-template unmain cop${generatedItems.length === 1 ? 'y' : 'ies'} to the editor.` : '';
+  setStatus(`Listing workflow applied to ${plan.rows.length} image${plan.rows.length === 1 ? '' : 's'} for ${plan.section.name}.${preparationMessage}${closeViewMessage}${generatedMessage}`);
   return plan;
 }
 listingOpenButton.setAttribute('aria-controls', 'listing-panel');
@@ -2269,7 +2341,7 @@ async function createExportBlob(item, format) {
 function exportFileName(item, format) {
   const sourceName = item.displayName || item.file.name;
   const stem = sourceName.replace(/\.[^/.]+$/, '').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim() || 'image';
-  return `${stem}-photo-studio.${format}`;
+  return `${stem}.${format}`;
 }
 function triggerDownload(blob, fileName) {
   const link = document.createElement('a');
@@ -2320,10 +2392,14 @@ function exportBatchFileName(batchItems) {
   return `${name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim()}.zip`;
 }
 async function exportBatchArchive(batchItems, format, archiveName = exportBatchFileName(batchItems), progressLabel = 'Exporting') {
-  const entries = [];
+  const entries = [], usedNames = new Set();
   for (let index = 0; index < batchItems.length; index += 1) {
     setStatus(`${progressLabel} ${index + 1} of ${batchItems.length}…`);
-    entries.push({name: exportFileName(batchItems[index], format), blob: await createExportBlob(batchItems[index], format)});
+    const requestedName = exportFileName(batchItems[index], format), stem = requestedName.slice(0, -(format.length + 1));
+    let name = requestedName, copyNumber = 2;
+    while (usedNames.has(name.toLowerCase())) name = `${stem} (${copyNumber++}).${format}`;
+    usedNames.add(name.toLowerCase());
+    entries.push({name, blob: await createExportBlob(batchItems[index], format)});
   }
   triggerDownload(await createZip(entries), archiveName);
   return entries.length;
