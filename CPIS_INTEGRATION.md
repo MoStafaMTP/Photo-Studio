@@ -91,7 +91,9 @@ The payload must cover every uploaded image exactly once. Initial matching uses 
 
 Locally generated unmain copies do not have to be included when CPIS resends metadata for its original uploads. Missing generated entries inherit the source's resolved variation and retain subtype `unmain`. `getMetadata()` includes the generated images with their actual filenames and editor IDs so a complete manifest can also be round-tripped.
 
-One editor batch has one account/material/color context. In metadata mode those values are authoritative, and the account/material selectors are locked. Uploading additional images requires updated metadata; the workflow blocks instead of guessing for unclassified files. Batch duplicates inherit metadata; deletion removes only that batch item. Undo/redo of visual edits does not change CPIS classification.
+One editor batch has one account/material/color context. In metadata mode those values are authoritative, and the account/material selectors are locked. Uploading additional images requires updated metadata; the workflow blocks instead of guessing for unclassified files. Batch duplicates inherit metadata; deletion removes only that batch item. Undo/redo of a visual edit preserves the classification active for that edit. Explicit metadata imports and `clearMetadata()` now create their own reversible history actions; undoing those actions restores the prior metadata mode and selector state.
+
+Apply Workflow is a single history action, including preparation, template assignments, Normal-last ordering and generated unmain copies. Undo removes newly generated outputs and restores the pre-workflow batch; Redo restores the same image and layer IDs. Undo/Redo is session state and is not persisted across reloads. Removing/restoring backgrounds after preparation keeps the fitted product placement.
 
 After processing, use the existing layer controls and per-image tools for manual corrections. Export and Export Batch render the edited canvas state; they do not re-run automatic classification or preparation. Existing exports remain image files/ZIPs, not a CPIS asset-upload service.
 

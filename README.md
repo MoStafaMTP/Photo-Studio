@@ -33,7 +33,8 @@ Detailed handoffs are available in:
 - Use `Delete` to remove selected layers, `Ctrl + C`/`Ctrl + V` to copy and paste them, `Ctrl + Enter` to center them, and `Ctrl + B` to toggle their backgrounds off or on.
 - Per-layer shadows with opacity, angle, and distance controls.
 - Manual background removal for selected layers or the complete batch; Close View sources are skipped, including by Ctrl+B.
-- Undo and redo.
+- Remove BG after Apply Workflow keeps the fitted product's size, center, rotation and placement. Prepared duplicates also keep their crop when backgrounds are toggled.
+- Session-wide Undo/Redo records each small movement, wheel/input adjustment, shadow, background, watermark, layer and canvas edit. Uploads, batch duplication/deletion, reset and Apply Workflow are reversible, including generated unmain images. There is no fixed 50-step limit. Use Ctrl+Z, Ctrl+Y, or Ctrl+Shift+Z.
 
 ### Watermarks
 
@@ -110,6 +111,7 @@ Then open <http://localhost:8000/>.
 | --- | --- |
 | `index.html` | Application shell and Listing interface. |
 | `script.js` | Editor, layers, watermark library, smart preparation, and export logic. |
+| `editor-history.js` | Whole-session edit history, state restoration and saved-watermark undo persistence. |
 | `styles.css` | Base editor styling. |
 | `viewport.css` | Final responsive layout and Listing UI styling. |
 | `watermark-assets.js` | Portable embedded copies of all bundled watermark PNGs. |
@@ -125,6 +127,8 @@ Then open <http://localhost:8000/>.
 
 Personal watermark uploads and safe-area overrides are stored in the browser's IndexedDB database named `photo-studio-assets`. They persist on that browser profile but are not committed to Git.
 
+Undo/Redo history remains available while the current tab is open; it is not saved across reloads. Undoing personal-template uploads, renames, deletions or margin changes also updates browser storage. Selection/navigation and exports do not add editing steps; a new edit after Undo starts a new branch and clears Redo.
+
 Bundled watermark templates are stored in the repository and work on every system.
 
 After adding or replacing bundled PNGs, update the library entries in `script.js` and run `node scripts/build-watermark-assets.cjs`.
@@ -138,6 +142,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. They are exempt from safe-area fitting and the 50px inset so that their original size and background are preserved. A source larger than the output canvas can extend beyond its edges; increase the output dimensions when needed. Manual enlargement is available, but shrinking below 100% and background removal are blocked for Close View sources and their layer/batch copies.
 
 ## Validation
+
+`tests/editor-history.browser.cjs` checks whole-batch history, more than 50 one-pixel moves, keyboard/wheel/numeric input, mouse dragging, cross-image Undo/Redo, layers, uploads/deletions, atomic workflow/reset actions, saved-watermark persistence, metadata actions, and fixed geometry and export pixels when removing/restoring backgrounds. It also verifies that repeated preparation reuses immutable image buffers.
 
 Layer duplication and account switching passed 30 checks in `tests/layer-layout.browser.cjs`: exact duplicate sizes at multiple rotations and fit modes, large scales, prepared cutout/export pixel bounds, background toggling, clipboard and group copies, repeated account changes, Main/Normal/manual watermark changes, layer order and selection, deleted original layers, composed unmain outputs, Close View preservation, and continued manual editing.
 

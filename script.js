@@ -187,19 +187,26 @@ let layerClipboard = [];
 let layerClipboardPasteCount = 0;
 const undoStack = [];
 const redoStack = [];
-function cloneEditorItem(item) {
-  if (!item) return null;
-  const copy = {...item, layerOrder: [...(item.layerOrder || ['base', ...(item.layers || []).map((layer) => layer.id)])], layers: (item.layers || []).map((layer) => ({...layer}))};
-  // Editing undo/redo must not replace classification supplied by CPIS.
-  delete copy.listingMetadata;
-  return copy;
+let editorHistory = null;
+let historyPersistence = Promise.resolve();
+function updateHistoryButtons() {
+  const busy = !editorHistory || editorHistory.depth > 0 || editorHistory.restoring;
+  undoButton.disabled = busy || !undoStack.length; redoButton.disabled = busy || !redoStack.length;
 }
-function snapshot() { return { item: activeIndex >= 0 ? cloneEditorItem(files[activeIndex]) : null, fit: fitSelect.value, imageScale: imageScale.value, width: resizeWidth.value, height: resizeHeight.value, shadowAngle: shadowAngle.value, shadowDistance: shadowDistance.value, shadowStrength: shadowStrength.value, backgroundMode, backgroundColor: backgroundColor.value, movementLock: movementLock.value }; }
-function updateHistoryButtons() { undoButton.disabled = !undoStack.length; redoButton.disabled = !redoStack.length; }
-function saveHistory() { if (activeIndex < 0) return; undoStack.push(snapshot()); if (undoStack.length > 50) undoStack.shift(); redoStack.length = 0; updateHistoryButtons(); }
-function restore(snapshotState) { if (!snapshotState?.item || activeIndex < 0) return; Object.assign(files[activeIndex], snapshotState.item); fitSelect.value = snapshotState.fit; setImageScaleInputs(snapshotState.imageScale); resizeWidth.value = snapshotState.width; resizeHeight.value = snapshotState.height; shadowStrength.value = snapshotState.shadowStrength; shadowAngle.value = snapshotState.shadowAngle ?? 90; angleValue.textContent = shadowAngle.value + '°'; shadowDistance.value = snapshotState.shadowDistance ?? 18; distanceValue.textContent = shadowDistance.value + 'px'; backgroundMode = snapshotState.backgroundMode ?? 'color'; backgroundColor.value = snapshotState.backgroundColor ?? '#ffffff'; backgroundColor.disabled = backgroundMode !== 'color'; movementLock.value = snapshotState.movementLock ?? 'none'; backgroundGroup.querySelectorAll('[data-background]').forEach(button => button.classList.toggle('active', button.dataset.background === backgroundMode)); const validLayerIds = new Set(allLayerEntityIds(files[activeIndex])); selectedLayerIds = new Set([...selectedLayerIds].filter((id) => validLayerIds.has(id))); if (!selectedLayerIds.size && validLayerIds.size) selectedLayerIds.add([...validLayerIds].at(-1)); renderLayerList(); syncSelectedLayerControls(); drawActive(); updateHistoryButtons(); }
-function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); setStatus('Undo.'); }
-function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); setStatus('Redo.'); }
+function saveHistory() { editorHistory?.prepare(); }
+function checkpointHistory() { editorHistory?.capture(); }
+function undo() { editorHistory?.undo(); }
+function redo() { editorHistory?.redo(); }
+async function withHistoryAction(action) {
+  const history = editorHistory; history?.begin();
+  try { return await action(); }
+  finally { history?.end(); }
+}
+function withHistoryActionSync(action) {
+  const history = editorHistory; history?.begin();
+  try { return action(); }
+  finally { history?.end(); }
+}
 const headerActions = document.querySelector('.header-actions');
 const headerExportControl = headerActions.querySelector('.header-export-control');
 const resizeGroup = resizeWidth.closest('.toolbar-group');
@@ -215,7 +222,12 @@ const undoButton = document.createElement('button'); undoButton.className = 'his
 const redoButton = document.createElement('button'); redoButton.className = 'history-button'; setIconControl(redoButton, 'redo', 'Redo (Ctrl+Y)');
 headerActions.prepend(redoButton); headerActions.prepend(undoButton);
 undoButton.addEventListener('click', undo); redoButton.addEventListener('click', redo); updateHistoryButtons();
-window.addEventListener('keydown', (event) => { if (!(event.ctrlKey || event.metaKey)) return; if (event.key.toLowerCase() === 'z') { event.preventDefault(); undo(); } if (event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); } });
+window.addEventListener('keydown', (event) => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
+  const key = event.code || event.key.toLowerCase();
+  if (key === 'KeyZ' || key === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); }
+  else if (key === 'KeyY' || key === 'y') { event.preventDefault(); redo(); }
+});
 let keyboardMoveActive = false;
 window.addEventListener('keydown', (event) => {
   if (activeIndex < 0 || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -340,6 +352,7 @@ document.addEventListener('keydown', (event) => {
 }, true);
 
 function renderThumbs() {
+  checkpointHistory();
   thumbList.innerHTML = '';
   files.forEach((item, index) => {
     const itemLabel = item.displayName || item.file.name;
@@ -390,7 +403,6 @@ async function duplicateBatchImage(index) {
       layerOrder: allLayerEntityIds(source).map((id) => id === 'base' ? 'base' : idMap.get(id)).filter(Boolean)
     };
     files.splice(index + 1, 0, duplicate);
-    undoStack.length = 0; redoStack.length = 0; updateHistoryButtons();
     selectImage(index + 1);
     setStatus(`${duplicate.displayName} added to the batch.`);
   } catch { setStatus('The image could not be duplicated.'); renderThumbs(); }
@@ -409,8 +421,7 @@ function removeBatchImage(index) {
   const wasActive = index === activeIndex;
   selectedBatchImageIds.delete(item.id);
   files.splice(index, 1);
-  new Set([item.url, ...(item.layers || []).map((layer) => layer.url)]).forEach((url) => URL.revokeObjectURL(url));
-  undoStack.length = 0; redoStack.length = 0; updateHistoryButtons();
+  // History retains image URLs so a deleted image can be restored until this tab closes.
   if (!files.length) {
     cpisListingContext = null;
     activeIndex = -1; selectedLayerIds.clear(); selectedBatchImageIds.clear(); listingAutoPrompted = false; renderThumbs(); renderLayerList();
@@ -467,8 +478,9 @@ function getImageSource(item) {
 }
 function getAddedLayerSource(layer) {
   if (!isCloseViewImage(layer) && layer.sourceSnapshot?.removeBg === Boolean(layer.removeBg)) return layer.sourceSnapshot.image;
+  if (!isCloseViewImage(layer) && !layer.removeBg && layer.sourceSnapshot?.original) return layer.sourceSnapshot.original;
   if (isCloseViewImage(layer) || !layer.removeBg) return layer.image;
-  if (!layer.processed) layer.processed = createBackgroundRemovedSource(layer.image);
+  if (!layer.processed) layer.processed = createBackgroundRemovedSource(layer.sourceSnapshot?.original || layer.image);
   return layer.processed;
 }
 function imageSourceSize(source) {
@@ -497,9 +509,13 @@ function interpolatedBackgroundColor(corners, xRatio, yRatio) {
     + corners[3][channel] * xRatio * yRatio
   );
 }
+const smartSourceCache = new WeakMap();
 function createSmartPreparation(source, safeArea, templateKey = '') {
   const sourceSize = imageSourceSize(source);
   if (!sourceSize.width || !sourceSize.height) throw new Error('The product image is not ready.');
+  const cacheKey = source instanceof HTMLImageElement ? `${source.currentSrc || source.src}:${sourceSize.width}:${sourceSize.height}` : null;
+  const cached = cacheKey && smartSourceCache.get(source);
+  if (cached?.key === cacheKey) return {...cached.preparation, bounds: {...cached.preparation.bounds}, safeArea: {...safeArea}, templateKey};
   const analysisScale = Math.min(1, 1600 / Math.max(sourceSize.width, sourceSize.height));
   const width = Math.max(1, Math.round(sourceSize.width * analysisScale));
   const height = Math.max(1, Math.round(sourceSize.height * analysisScale));
@@ -598,7 +614,7 @@ function createSmartPreparation(source, safeArea, templateKey = '') {
   } else { left = 0; top = 0; right = width - 1; bottom = height - 1; }
   foregroundContext.putImageData(foregroundPixels, 0, 0);
   reconstructedContext.putImageData(reconstructedPixels, 0, 0);
-  return {
+  const preparation = {
     enabled: true,
     foreground,
     background: reconstructed,
@@ -609,6 +625,8 @@ function createSmartPreparation(source, safeArea, templateKey = '') {
     mode: reliable ? 'separated' : 'fallback',
     analysisSize: {width, height}
   };
+  if (cacheKey) smartSourceCache.set(source, {key: cacheKey, preparation: {...preparation, bounds: {...preparation.bounds}}});
+  return preparation;
 }
 const SMART_WATERMARK_GAP = 50; // Output pixels, independent of template size or browser zoom.
 function smartSafeRect(preparation, outputWidth = canvas.width, outputHeight = canvas.height) {
@@ -772,7 +790,7 @@ function preserveCompositionLayout(item) {
 }
 function drawSmartPreparedBase(item) {
   const preparation = item.smartPrep, backgroundSize = imageSourceSize(preparation.background);
-  if (backgroundSize.width && backgroundSize.height) {
+  if (!item.removeBg && backgroundSize.width && backgroundSize.height) {
     const backgroundScale = Math.max(canvas.width / backgroundSize.width, canvas.height / backgroundSize.height);
     const backgroundWidth = backgroundSize.width * backgroundScale, backgroundHeight = backgroundSize.height * backgroundScale;
     ctx.drawImage(preparation.background, (canvas.width - backgroundWidth) / 2, (canvas.height - backgroundHeight) / 2, backgroundWidth, backgroundHeight);
@@ -782,7 +800,9 @@ function drawSmartPreparedBase(item) {
   ctx.save();
   ctx.translate(geometry.x, geometry.y); ctx.rotate((item.rotation || 0) * Math.PI / 180); ctx.scale(item.mirror ? -1 : 1, item.flipY ? -1 : 1);
   if (item.shadow) { const distance = Number(item.shadowDistance ?? 18); const angle = Number(item.shadowAngle ?? 90); ctx.shadowColor = `rgba(36, 25, 20, ${Number(item.shadowStrength ?? 80) / 100})`; ctx.shadowBlur = 26; ctx.shadowOffsetX = Math.cos(angle * Math.PI / 180) * distance; ctx.shadowOffsetY = Math.sin(angle * Math.PI / 180) * distance; }
-  ctx.drawImage(preparation.foreground, bounds.x, bounds.y, bounds.width, bounds.height, -geometry.drawWidth / 2, -geometry.drawHeight / 2, geometry.drawWidth, geometry.drawHeight);
+  const foreground = item.removeBg && preparation.mode !== 'separated'
+    ? (item.processed ||= createBackgroundRemovedSource(preparation.foreground)) : preparation.foreground;
+  ctx.drawImage(foreground, bounds.x, bounds.y, bounds.width, bounds.height, -geometry.drawWidth / 2, -geometry.drawHeight / 2, geometry.drawWidth, geometry.drawHeight);
   ctx.restore();
 }
 function getBaseLayerDrawSize(item, image) {
@@ -989,8 +1009,14 @@ function layerCopyDescriptor(item, id) {
   let sourceSnapshot = null;
   if (geometry) {
     const {bounds} = geometry, image = document.createElement('canvas'); image.width = bounds.width; image.height = bounds.height;
-    image.getContext('2d').drawImage(item.smartPrep.foreground, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, image.width, image.height);
-    sourceSnapshot = {image, removeBg: item.smartPrep.mode === 'separated'};
+    const foreground = item.removeBg && item.smartPrep.mode !== 'separated'
+      ? (item.processed ||= createBackgroundRemovedSource(item.smartPrep.foreground)) : item.smartPrep.foreground;
+    image.getContext('2d').drawImage(foreground, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, image.width, image.height);
+    const original = document.createElement('canvas'); original.width = image.width; original.height = image.height;
+    const sourceSize = imageSourceSize(item.image), analysisSize = imageSourceSize(item.smartPrep.foreground);
+    original.getContext('2d').drawImage(item.image, bounds.x * sourceSize.width / analysisSize.width, bounds.y * sourceSize.height / analysisSize.height,
+      bounds.width * sourceSize.width / analysisSize.width, bounds.height * sourceSize.height / analysisSize.height, 0, 0, original.width, original.height);
+    sourceSnapshot = {image, original, removeBg: item.removeBg || item.smartPrep.mode === 'separated'};
   }
   const descriptor = {id: null, file: item.file, name: item.displayName || item.file.name, url: null, image: item.image, closeView: isCloseViewImage(item), x: rect.x, y: rect.y, scale: Math.max(minimumLayerScale(item), item.scale ?? 100), fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: sourceSnapshot ? sourceSnapshot.removeBg : Boolean(item.removeBg), processed: item.processed, sourceSnapshot, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
   const drawWidth = geometry?.drawWidth ?? getBaseLayerDrawSize(item, getImageSource(item)).width;
@@ -1116,6 +1142,7 @@ function paintWatermark(item) {
 }
 function drawWatermark() { drawActive(); }
 function drawActive() {
+  checkpointHistory();
   const item = files[activeIndex]; if (!item?.image.complete || !item.image.naturalWidth) return; const scale = Math.min(1, 900 / Math.max(item.image.naturalWidth, item.image.naturalHeight)); canvas.width = Math.max(360, Number(resizeWidth.value) || Math.round(item.image.naturalWidth * scale)); canvas.height = Math.max(360, Number(resizeHeight.value) || Math.round(item.image.naturalHeight * scale)); drawBackground(); drawLayerStack(item); paintWatermark(item); if (!exporting) { scheduleThumbnailUpdate(item); drawLayerSelection(item); }
 }
 function rotate(degrees) {
@@ -1236,6 +1263,10 @@ async function addLayerImages(fileList) {
     image.src = url;
   })));
   const validLayers = loadedLayers.filter(Boolean);
+  if (!files.includes(item)) {
+    validLayers.forEach(layer => URL.revokeObjectURL(layer.url));
+    return;
+  }
   item.layers.push(...validLayers);
   normalizeLayerOrder(item);
   if (files[activeIndex] === item) {
@@ -1243,6 +1274,7 @@ async function addLayerImages(fileList) {
     renderLayerList(); syncSelectedLayerControls(); drawActive();
   }
   setStatus(`${validLayers.length} image layer${validLayers.length === 1 ? '' : 's'} added.`);
+  checkpointHistory();
 }
 layerAddButton.addEventListener('click', () => {
   if (activeIndex < 0) { setStatus('Upload a main image before adding layers.'); return; }
@@ -1369,7 +1401,7 @@ function toggleSelectedLayerBackgrounds() {
   if (!eligible.length) { setStatus('Close View images keep their original background.'); return false; }
   const nextValue = !eligible.every((entity) => entity.data.removeBg);
   saveHistory();
-  eligible.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.processed = null; if (entity.type === 'base') entity.data.smartPrep = null; });
+  eligible.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.processed = null; });
   syncSelectedLayerControls(); drawActive(); setStatus((nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.') + (eligible.length < selected.length ? ' Close View images were skipped.' : ''));
   return true;
 }
@@ -1406,7 +1438,7 @@ removeAllBgButton.addEventListener('click', () => {
   files.forEach((item) => {
     [item, ...(item.layers || [])].forEach((layer) => {
       if (isCloseViewImage(layer)) { skipped += 1; return; }
-      layer.removeBg = true; layer.processed = null; layer.smartPrep = null; count += 1;
+      layer.removeBg = true; layer.processed = null; count += 1;
     });
   });
   syncSelectedLayerControls(); drawActive(); setStatus(`Background removal enabled for ${count} layer${count === 1 ? '' : 's'}.${skipped ? ' Close View images were skipped.' : ''}`);
@@ -1642,11 +1674,14 @@ async function loadListingTemplateImage(sectionIndex, template) {
 }
 function watermarkSafeAreaStorageKey(sectionIndex, templateId) { return `watermark-safe-area-${sectionIndex}-${templateId}`; }
 async function saveWatermarkSafeArea(sectionIndex, template, safeArea) {
+  return withHistoryAction(() => saveWatermarkSafeAreaInternal(sectionIndex, template, safeArea));
+}
+async function saveWatermarkSafeAreaInternal(sectionIndex, template, safeArea) {
   const key = listingTemplateKey(sectionIndex, template), normalized = normalizedWatermarkSafeArea(safeArea);
   watermarkSafeAreaCache.set(key, normalized); template.safeArea = normalized;
   try { await assetStore('readwrite', store => store.put(normalized, watermarkSafeAreaStorageKey(sectionIndex, template.id))); } catch {}
   files.forEach((item) => {
-    if (item.watermarkSection === sectionIndex && item.watermarkTemplateId === template.id && item.smartPrep) item.smartPrep.safeArea = {...normalized};
+    if (item.watermarkSection === sectionIndex && item.watermarkTemplateId === template.id && item.smartPrep) item.smartPrep = {...item.smartPrep, safeArea: {...normalized}};
   });
   drawActive();
   return normalized;
@@ -1669,7 +1704,8 @@ async function getWatermarkSafeArea(sectionIndex, template, image, forceAnalysis
   }
   const analyzed = analyzeWatermarkSafeArea(image);
   if (forceAnalysis) analyzed.source = 'analyzed';
-  await saveWatermarkSafeArea(sectionIndex, template, analyzed);
+  if (forceAnalysis) await saveWatermarkSafeArea(sectionIndex, template, analyzed);
+  else await saveWatermarkSafeAreaInternal(sectionIndex, template, analyzed);
   return analyzed;
 }
 function uniqueListingTemplates(plan) {
@@ -1893,6 +1929,9 @@ function commitCPISContext(context) {
   listingAccount.value = String(context.sectionIndex); listingMaterial.value = context.materialKey;
 }
 function setCPISMetadata(payload) {
+  return withHistoryActionSync(() => setCPISMetadataInternal(payload));
+}
+function setCPISMetadataInternal(payload) {
   const {context, bindings} = prepareCPISMetadata(payload, files);
   commitCPISContext(context);
   bindings.forEach(({item, metadata}) => { item.listingMetadata = metadata; });
@@ -1900,6 +1939,9 @@ function setCPISMetadata(payload) {
   return getCPISMetadata();
 }
 async function importCPISImages(payload, imageFiles) {
+  return withHistoryAction(() => importCPISImagesInternal(payload, imageFiles));
+}
+async function importCPISImagesInternal(payload, imageFiles) {
   if (files.length) throw new Error('CPIS: importImages needs an empty editor. Use setMetadata for images already uploaded.');
   const incoming = Array.from(imageFiles || []);
   if (!incoming.length || incoming.some(file => !file?.type?.startsWith('image/') || typeof file.arrayBuffer !== 'function')) {
@@ -1917,6 +1959,9 @@ async function importCPISImages(payload, imageFiles) {
   return getCPISMetadata();
 }
 function clearCPISMetadata() {
+  return withHistoryActionSync(clearCPISMetadataInternal);
+}
+function clearCPISMetadataInternal() {
   if (listingBusy) throw new Error('Wait for the current Listing workflow to finish.');
   cpisListingContext = null;
   files.forEach(item => { delete item.listingMetadata; });
@@ -1994,6 +2039,9 @@ async function materializeUnmainRow(row) {
   }
 }
 async function applyListingWatermarks() {
+  return withHistoryAction(applyListingWatermarksInternal);
+}
+async function applyListingWatermarksInternal() {
   const plan = createListingPlan();
   if (!plan.ready) {
     const missingNames = [...new Set(plan.rows.filter(row => !row.metadataError && !row.template && row.requestedTemplate).map(row => row.requestedTemplate))];
@@ -2061,7 +2109,6 @@ async function applyListingWatermarks() {
     throw error;
   }
   if (generatedItems.length) {
-    undoStack.length = 0; redoStack.length = 0; updateHistoryButtons();
     plan.rows.forEach(row => { row.pendingGeneration = false; });
   }
   // Keep relative order within each group and preserve the active image by identity.
@@ -2191,6 +2238,7 @@ function clearWatermarkPreviewUrls() {
   watermarkPreviewUrls = [];
 }
 function renderWatermarkLibrary() {
+  checkpointHistory();
   refreshListingPreview();
   watermarkSectionList.innerHTML = '';
   WATERMARK_SECTION_DISPLAY_ORDER.forEach((index) => {
@@ -2259,6 +2307,9 @@ function renderWatermarkLibrary() {
   });
 }
 async function selectWatermarkTemplate(sectionIndex, templateId) {
+  return withHistoryAction(() => selectWatermarkTemplateInternal(sectionIndex, templateId));
+}
+async function selectWatermarkTemplateInternal(sectionIndex, templateId) {
   const template = findWatermarkTemplate(sectionIndex, templateId);
   if (!template?.blob && !template?.src) return;
   const targets = watermarkTargetItems();
@@ -2292,6 +2343,9 @@ async function selectWatermarkTemplate(sectionIndex, templateId) {
   setStatus(`${template.name} applied to ${scope}.`);
 }
 async function addWatermarkTemplates(sectionIndex, fileList) {
+  return withHistoryAction(() => addWatermarkTemplatesInternal(sectionIndex, fileList));
+}
+async function addWatermarkTemplatesInternal(sectionIndex, fileList) {
   const imageFiles = [...fileList].filter((file) => file.type.startsWith('image/'));
   if (!imageFiles.length) return;
   const templates = imageFiles.map((file) => ({
@@ -2307,6 +2361,9 @@ async function addWatermarkTemplates(sectionIndex, fileList) {
   setStatus(`${templates.length} template${templates.length === 1 ? '' : 's'} saved in ${watermarkSections[sectionIndex].name}.`);
 }
 async function renameWatermarkTemplate(sectionIndex, templateId) {
+  return withHistoryAction(() => renameWatermarkTemplateInternal(sectionIndex, templateId));
+}
+async function renameWatermarkTemplateInternal(sectionIndex, templateId) {
   const template = findWatermarkTemplate(sectionIndex, templateId); if (!template) return;
   if (template.builtIn) { setStatus('Default watermarks are read-only.'); return; }
   const nextName = window.prompt('Rename saved watermark', template.name);
@@ -2317,6 +2374,9 @@ async function renameWatermarkTemplate(sectionIndex, templateId) {
   setStatus(`Renamed to ${template.name}.`);
 }
 async function deleteWatermarkTemplate(sectionIndex, templateId) {
+  return withHistoryAction(() => deleteWatermarkTemplateInternal(sectionIndex, templateId));
+}
+async function deleteWatermarkTemplateInternal(sectionIndex, templateId) {
   const section = watermarkSections[sectionIndex];
   const templateIndex = section?.templates.findIndex((template) => template.id === templateId) ?? -1;
   if (templateIndex < 0) return;
@@ -2345,7 +2405,7 @@ watermarkImageInput.addEventListener('change', async () => {
   catch { setStatus('Could not load or save watermark. Browser storage may be unavailable.'); }
   watermarkImageInput.value = '';
 });
-(async () => {
+const watermarkLibraryReady = (async () => {
   try {
     for (let index = 0; index < watermarkSections.length; index += 1) {
       const savedTemplates = await assetStore('readonly', store => store.get(watermarkSectionKey(index)));
@@ -2470,22 +2530,16 @@ exportAll.addEventListener('click', async () => {
   } catch { setStatus('Batch export failed. Reload the project through its local web server and try again.'); }
   finally { exportAll.disabled = !files.length; }
 });
-document.querySelector('#reset-editor').addEventListener('click', () => { if (activeIndex < 0) return; files[activeIndex].rotation = 0; files[activeIndex].mirror = false; files[activeIndex].flipY = false; files[activeIndex].offsetX = 0; files[activeIndex].offsetY = 0; files[activeIndex].removeBg = false; files[activeIndex].processed = null; files[activeIndex].shadow = false; files[activeIndex].shadowAngle = 90; files[activeIndex].shadowDistance = 18; files[activeIndex].shadowStrength = 80; files[activeIndex].fit = 'contain'; fitSelect.value = 'contain'; setImageScaleInputs(100); resizeWidth.value = 1576; resizeHeight.value = 1576; watermarkImageInput.value = ''; watermarkSize.value = 0; watermarkGap.value = 0; shadowAngle.value = 90; angleValue.textContent = '90°'; shadowStrength.value = 80; shadowToggle.textContent = 'Add shadow'; shadowToggle.classList.remove('active'); watermark.style.background = ''; watermark.style.width = ''; watermark.style.height = ''; watermark.style.fontSize = ''; watermark.style.left = '50%'; watermark.style.top = '50%'; removeBgButton.classList.remove('active'); syncSelectedLayerControls(); drawActive(); setStatus('Current image reset.'); });
-document.querySelector('#reset-editor').addEventListener('click', () => { if (activeIndex < 0) return; files[activeIndex].scale = 100; setImageScaleInputs(100); drawActive(); });
-document.querySelector('#reset-editor').addEventListener('click', () => { shadowDistance.value = 18; distanceValue.textContent = '18px'; });
-document.querySelector('#reset-editor').addEventListener('click', updateRemoveBackgroundControls);
-document.querySelector('#reset-editor').addEventListener('click', () => { const item = files[activeIndex]; if (item) item.smartPrep = null; });
-document.querySelector('#reset-editor').addEventListener('click', () => {
+document.querySelector('#reset-editor').addEventListener('click', () => withHistoryActionSync(() => {
   const item = files[activeIndex]; if (!item) return;
-  item.watermarkImage = null;
-  item.watermarkEnabled = false;
-  item.watermarkOpacity = 100;
-  item.watermarkSection = null;
-  item.watermarkTemplateId = null;
-  opacityInput.value = 100;
-  syncWatermarkControls();
-  drawActive();
-});
+  Object.assign(item, {rotation: 0, mirror: false, flipY: false, offsetX: 0, offsetY: 0, scale: 100,
+    removeBg: false, processed: null, smartPrep: null, shadow: false, shadowAngle: 90, shadowDistance: 18,
+    shadowStrength: 80, fit: 'contain', watermarkImage: null, watermarkEnabled: false, watermarkOpacity: 100,
+    watermarkSection: null, watermarkTemplateId: null});
+  fitSelect.value = 'contain'; setImageScaleInputs(100); resizeWidth.value = resizeHeight.value = 1576;
+  watermarkImageInput.value = ''; watermarkSize.value = watermarkGap.value = 0; opacityInput.value = 100;
+  syncSelectedLayerControls(); syncWatermarkControls(); drawActive(); setStatus('Current image reset.');
+}));
 
 // Use the available grid cell, not the canvas's intrinsic 1576px dimensions, for preview sizing.
 const stage = document.createElement('div');

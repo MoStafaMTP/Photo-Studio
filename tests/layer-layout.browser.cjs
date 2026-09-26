@@ -61,7 +61,7 @@ const path = require('node:path');
         && Math.abs(originalPixels.count - copiedPixels.count) < originalPixels.count * .002);
       item.baseRemoved = false; selectedLayerIds = new Set([exactCopy.id]);
       const snapshot = getAddedLayerSource(exactCopy); toggleSelectedLayerBackgrounds();
-      check('Prepared duplicate can restore its original background', !exactCopy.removeBg && getAddedLayerSource(exactCopy) === exactCopy.image);
+      check('Prepared duplicate can restore its original background without changing the crop', !exactCopy.removeBg && getAddedLayerSource(exactCopy) === exactCopy.sourceSnapshot.original);
       toggleSelectedLayerBackgrounds();
       check('Prepared duplicate can restore the exact cutout again', exactCopy.removeBg && getAddedLayerSource(exactCopy) === snapshot);
       selectedLayerIds = new Set(['base']); copySelectedLayers(); await pasteCopiedLayers();

@@ -44,7 +44,7 @@ The **Smart image preparation** checkbox is enabled by default in Listing. Turni
 
 See `CPIS_INTEGRATION.md` for the full contract. `listing-metadata.js` validates the primary codes DT/DB/PT/PB/DPT/DPB/DTB/PTB/DPTB, shared codes DOPT/DOPB, and subtypes main/unmain/cv/io/numbered. CPIS classifications override filenames. Only primary `main` rows use Main/Passenger Side templates; other subtypes and shared components use Normal, including `unmain` as confirmed by the user. An optional explicit `templateName` can override template choice without overriding Close View processing.
 
-Listing exposes **Import CPIS JSON** and **Use filenames**. `window.PhotoStudioIntegration` supports structured metadata with File objects, an existing-batch metadata setter, plan/metadata getters, clearing metadata, and the normal Apply Workflow operation. The imported account/material context is authoritative and its selectors are locked; color and optional source IDs are preserved. Unknown values, ambiguous filenames, incomplete manifests, and unclassified new uploads are surfaced rather than guessed. Metadata is copied by batch duplication and excluded from visual-edit undo snapshots.
+Listing exposes **Import CPIS JSON** and **Use filenames**. `window.PhotoStudioIntegration` supports structured metadata with File objects, an existing-batch metadata setter, plan/metadata getters, clearing metadata, and the normal Apply Workflow operation. The imported account/material context is authoritative and its selectors are locked; color and optional source IDs are preserved. Unknown values, ambiguous filenames, incomplete manifests, and unclassified new uploads are surfaced rather than guessed. Metadata is copied by batch duplication. Visual-edit Undo retains the metadata active for that edit; explicit metadata import/clear operations now have their own reversible history steps.
 
 CPIS remains responsible for which variations use shared images and for composite/listing assembly. No CPIS server connection, business-rule engine, or asset-upload service was added.
 
@@ -149,9 +149,17 @@ Each prepared batch item receives an in-memory `smartPrep` object containing:
 
 The canvas renderer recognizes this state for preview, thumbnails, individual export, and batch export. Prepared state is copied when a complete left-side batch image is duplicated during the session.
 
+Remove BG now retains `smartPrep` and its placement. It hides the reconstructed background while keeping the same fitted foreground; restoring the background brings back the reconstruction. Full-image fallback preparations use manual removal on their existing foreground canvas without re-fitting. Prepared layer copies retain both the cutout and the corresponding original-background crop, so changing background state cannot change their aspect ratio or displayed size.
+
+`editor-history.js`, loaded after the editor, records complete batch and global-setting states. It preserves image/layer identities on restore, clones mutable configuration, shares immutable image assets, and ignores previews, processing caches, selection and navigation when detecting edits. Small input, wheel, key-repeat and drag increments are separate steps; compound operations such as Apply Workflow, watermark upload/application and Reset remain single actions. The previous 50-step cap and batch-operation history clearing are removed. Deleted source URLs remain available for restoration until the tab closes. Prepared foreground/background buffers are reused for repeated processing of the same immutable source image to avoid duplicating them for account changes.
+
+History covers layer and batch uploads, duplication and deletion, stacking, size/position/rotation/flips, shadows, background controls/removal, watermark assignment/opacity/visibility, canvas dimensions, movement lock, export format, Listing settings/workflows, and explicit CPIS metadata actions. Undo follows the affected batch state even after selecting another image. Personal-watermark upload/rename/delete and template margins are also reversible; restores use an ordered IndexedDB transaction so saved library state matches the editor. Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z work with focused numeric controls and non-Latin keyboard layouts. No-op inputs and rendering/export do not consume history; a new edit after Undo clears Redo.
+
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+`tests/editor-history.browser.cjs` covers granular and whole-batch history, restoring uploads and deletions with usable image assets, more than 50 movement steps, cross-image Undo/Redo, layers, compound workflow/reset actions, saved-library persistence, explicit metadata actions, real mouse movement and history buttons, numeric keyboard shortcuts, and background-toggle geometry/export pixels.
 
 `tests/layer-layout.browser.cjs` passes 30 checks for exact-sized duplicates, crop/export pixels, high scales and rotated contain/cover layers, shadows and flips, background restoration, clipboard/group copies, repeated account changes, Normal/manual watermark changes, kept layer order/selection, continued editing, deleted original layers, composed unmain outputs, Close View arrangements, and later margin edits.
 
