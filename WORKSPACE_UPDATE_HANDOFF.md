@@ -2,7 +2,9 @@
 
 Status: implemented and browser-verified on 2026-09-26, following the user's confirmation to implement now.
 
-Requested: 2026-09-26.
+Requested: 2026-09-26. Revised after user review to separate size/shadow sections, stack Resize, list accounts vertically, move templates below all accounts, move icon-only view controls to the image corner, restore left-side downloads, and return the header to one line.
+
+The first workspace implementation is preserved at [`39121d4`](https://github.com/MoStafaMTP/Photo-Studio/commit/39121d4271b1e61b248e82767832da4606add81b).
 
 Pre-update checkpoint: [`4052c728fc8e94aebaa63d66da863c6f2c6b6712`](https://github.com/MoStafaMTP/Photo-Studio/commit/4052c728fc8e94aebaa63d66da863c6f2c6b6712), including refined cutout edges and the original-background toggle. The existing Phase 1, Phase 1.1 and Phase 1.2 handoffs remain available. This document preserves the requested scope and records the implemented workspace/text-layer update. No new phase number was assigned.
 
@@ -15,7 +17,7 @@ Provide a view system inspired by Photoroom's Batch section, with these two mode
 | **Full Screen View** | The current Photo Studio editing view, with the main canvas, left-side images and right-side tools. |
 | **Grid View** | Show the same images from the Left Side as larger previews in a grid layout. |
 
-“Full Screen View” means the existing editor layout. Browser fullscreen is not part of this request.
+“Full Screen View” means the existing editor layout. Browser fullscreen is not part of this request. Both views keep the left sidebar and its fixed download controls visible. View switching uses icons with tooltips and accessible names at the canvas bottom-right; in Grid View the same controls stay at the grid area bottom-right. These controls do not handle canvas drag/wheel gestures and are excluded from image exports.
 
 The view switch must operate on the existing project images. Current edits, layer arrangements, image order, selected images, watermark assignments and Undo/Redo history must survive switching views. Grid previews must show each image's latest rendered composition, including layers, text, background and watermark.
 
@@ -25,44 +27,38 @@ Retain current batch selection behavior in the grid: single-image selection, Ctr
 
 Keep **Layers** fixed at the top of the Right Side and always open. Its controls and layer list must remain accessible while the tools below scroll; a long layer list may scroll within its own area.
 
-Below Layers, provide three expandable sections in this order:
+Below Layers, provide four independent expandable sections in this order:
 
-1. **Image Size, Shadow**
-2. **Saved Watermarks**
-3. **Text Editor**
+1. **Image Size** (with Resize Canvas below the size controls)
+2. **Shadow**
+3. **Saved Watermarks**
+4. **Text Editor**
 
 Clicking a section header opens its contents; clicking again can collapse it. Opening or closing a section must preserve all editing values and layer selections. Headers must support keyboard operation and expose their expanded/collapsed state.
 
-The request does not specify whether opening one section should close another. The implemented default is independent sections, allowing more than one to stay open. Image Size, Shadow starts open; Saved Watermarks and Text Editor start closed. Selecting a text layer opens Text Editor.
+The request does not specify whether opening one section should close another. The implemented default is independent sections, allowing more than one to stay open. Image Size and Shadow start open; Saved Watermarks and Text Editor start closed. Selecting a text layer opens Text Editor.
 
-### Image Size, Shadow
+### Image Size and Shadow
 
 - Include the existing Image Size slider and numeric percentage field.
-- Move the **Resize** controls from the header into this section, next to Image Size.
+- Place **Resize Canvas** underneath the Image Size controls inside the Image Size section.
 - Preserve the distinction between Image Size (selected layer scale) and Resize (output canvas width/height in pixels).
-- Include the existing shadow controls: enable/disable, opacity/intensity, angle and distance.
+- Keep Shadow in its own expandable section with the existing controls: enable/disable, opacity/intensity, angle and distance.
 - Retain current per-layer behavior, group scaling and default 80% intensity when adding a shadow.
 - Keep the controls readable and responsive; stack adjacent controls at narrow widths if needed.
 
 ### Saved Watermarks
 
-- Show the saved watermark accounts in this section.
-- Clicking an eBay account opens its templates and related options **underneath that account**.
+- Show each saved watermark account on its own full-width line.
+- Clicking an eBay account opens its templates and related options **below the complete account list**.
 - Use this inline expansion in place of the previous template panel that appears to the left on hover.
 - Selecting a template keeps the existing rule: apply it only to the selected batch images.
 - Retain bundled defaults, personal uploads, previews, rename/delete controls for personal templates, watermark disabling and opacity settings.
 - Preserve the current account names and account-specific templates, including the DSA eBay exception.
 
-Retain the existing account ordering unless a later design update changes it:
+Account order retains the previous row-reading order: US Auto Nation, DIY, US Auto Seat Cover, Master, US Auto Seat Factory, Premium, DSA eBay, Elite. Each now occupies a separate line.
 
-| Left | Right |
-| --- | --- |
-| US Auto Nation | DIY |
-| US Auto Seat Cover | Master |
-| US Auto Seat Factory | Premium |
-| DSA eBay | Elite |
-
-The expanded account spans both columns and displays a two-column template grid underneath its account button. Clicking the same account again closes it. The panel never covers the canvas or neighboring controls.
+A shared two-column template grid appears below all eight accounts, with the selected account name and upload control. Clicking another account replaces the templates in this same area without moving any account row. Clicking the open account again collapses the panel.
 
 ### Text Editor
 
@@ -108,21 +104,21 @@ Text must render consistently in the main canvas, left-side thumbnails, grid pre
 
 - `workspace-ui.js` assembles the shared Full Screen/Grid view switch, sidebar sections and responsive header. Grid cards offer select, edit, duplicate and delete actions; double-click also opens an image in Full Screen View. Ctrl/Command multi-selection and existing batch shortcuts share the original selection state.
 - Grid previews use `renderEditorComposition(item)` in `script.js`, the same renderer as the editor and export. A separate cache uses edit-state keys; one dirty image is processed per animation frame, prioritizing the active image. Export, workflow processing and dragging pause preview work. Previews never change active selection or create history steps.
-- `workspace-ui.css` is loaded after the existing stylesheets. Grid rows preserve their content height for large batches; the grid and left-side image list scroll independently. Layers has its own bounded list and stays above the scrolling accordion controls. On narrow mobile screens, the tools stack below the workspace.
+- `workspace-ui.css` is loaded after the existing stylesheets. Grid rows preserve their content height for large batches; the grid and left-side image list scroll independently. Layers has its own bounded list and stays above the scrolling accordion controls. On narrow mobile screens, the tools stack below the workspace while a compact left sidebar keeps downloads accessible.
 - `text-layers.js` owns structured `type: 'text'` layer data, canvas text layout/rendering, font readiness and Text Editor controls. A text layer is not permanently rasterized. It uses the shared position/rotation/flip/scale/shadow fields and existing layer bounds, grouping, ordering, history and deletion rules.
 - Duplication, copy/paste, batch duplication and generated unmain copies preserve text data with independent IDs. Image-asset loading and background removal skip text layers. Text can remain as the final layer after deleting the original image layer.
-- All downloads remain in the header. Resize is in the first sidebar section and controls canvas dimensions; Image Size controls the selected layer's percentage scale.
+- The header stays on one line. The export format and both download buttons are outside the scrolling thumbnails at the bottom of the left sidebar, which remains visible in both views. Resize is below Image Size and controls canvas dimensions; Image Size controls the selected layer's percentage scale.
 - Personal watermarks still persist in IndexedDB. Uploaded images, text layers, view state and Undo/Redo are session state, consistent with the existing editor; this update does not add project-file persistence across reloads.
 
 Load order is `text-layers.js`, `script.js`, `workspace-ui.js`, then `editor-history.js` after the existing watermark/metadata modules. Text functions are initialized before the renderer, but their controls are assembled after the main editor DOM exists.
 
 ## Validation
 
-All 220 checks passed across these six browser suites, with no uncaught browser errors:
+The initial workspace implementation passed 220 checks across these six browser suites, with no uncaught browser errors. After the layout revision, the expanded workspace suite passed 53 checks, including header/control geometry, independent size/shadow panels, accounts on separate lines, templates below all accounts, fixed downloads in both views, and view-control gesture isolation. Other suite results below record the initial workspace baseline:
 
 | Suite | Checks | Coverage |
 | --- | ---: | --- |
-| `tests/workspace-text.browser.cjs` | 47 | Real view/account/text UI interactions, shared selection, keyboard navigation, granular text history, group transforms, text/whole-image copies, image-only background removal, workflow/unmain text preservation, font failure fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
+| `tests/workspace-text.browser.cjs` | 53 | Real view/account/text UI interactions, shared selection, keyboard navigation, granular text history, group transforms, text/whole-image copies, image-only background removal, workflow/unmain text preservation, font failure fallback, individual JPG/PNG/WebP pixels, a downloaded Elite ZIP, fixed Layers and a 35-image scrolling batch. |
 | `tests/editor-history.browser.cjs` | 59 | Existing whole-session history and all editing paths. |
 | `tests/layer-layout.browser.cjs` | 30 | Exact duplicate sizes and preserving compositions across account/template changes. |
 | `tests/listing-unmain.browser.cjs` | 39 | Template mapping, generated copies, metadata and real downloads. |
@@ -137,9 +133,11 @@ Screenshots were inspected at 1600 × 1000, including Grid View and text editing
 - [x] Switching views preserves edits, selection, order and Undo/Redo.
 - [x] Grid previews reflect the latest complete image composition.
 - [x] Layers stays at the top, remains open and remains usable with long layer/tool lists.
-- [x] The three requested sections expand and collapse by click and keyboard.
-- [x] Resize is next to Image Size in the first section, with current sizing/shadow behavior preserved.
-- [x] Account templates expand inline underneath the clicked account.
+- [x] Image Size, Shadow, Saved Watermarks and Text Editor expand independently.
+- [x] Resize is below Image Size, and Shadow has its own section with all controls preserved.
+- [x] Each account has its own line; its templates expand below all accounts.
+- [x] Icon-only view controls sit at the canvas/grid bottom-right without affecting image gestures.
+- [x] Downloads stay fixed at the left-side bottom and the header remains one line.
 - [x] Text can be added, edited, styled and manipulated as a true layer.
 - [x] Text input shortcuts do not accidentally trigger destructive layer actions.
 - [x] Text, fonts and styling match across previews and all export formats.

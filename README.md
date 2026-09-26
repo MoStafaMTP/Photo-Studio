@@ -20,7 +20,7 @@ Detailed handoffs are available in:
 
 ## Workspace and text update
 
-Implemented on September 26, 2026: Full Screen/Grid views, expandable tools beneath fixed Layers, inline account templates, and editable text layers. [`WORKSPACE_UPDATE_HANDOFF.md`](WORKSPACE_UPDATE_HANDOFF.md) records the requirements, implementation, pre-update checkpoint and completed validation.
+Implemented on September 26, 2026: Full Screen/Grid views, expandable tools beneath fixed Layers, account templates below the account list, and editable text layers. [`WORKSPACE_UPDATE_HANDOFF.md`](WORKSPACE_UPDATE_HANDOFF.md) records the requirements, implementation, pre-update checkpoint and completed validation.
 
 ## Features
 
@@ -28,8 +28,9 @@ Implemented on September 26, 2026: Full Screen/Grid views, expandable tools bene
 
 - **Full Screen View** keeps the main canvas and left-side image list. **Grid View** displays the same batch as large current previews, with selection, edit, duplicate and delete controls. Double-click a preview to open it in Full Screen View.
 - Ctrl/Command multi-selection, Ctrl+Alt+A, Tab and Shift+Tab work in both views. Switching views preserves edits, layer selections, image order and Undo/Redo.
-- Layers stays open at the top. Independent **Image Size, Shadow**, **Saved Watermarks**, and **Text Editor** sections expand underneath it.
-- Resize canvas width/height is next to the Image Size percentage controls. Export remains in the header.
+- Layers stays open at the top. Independent **Image Size**, **Shadow**, **Saved Watermarks**, and **Text Editor** sections expand underneath it.
+- Resize canvas width/height is below the Image Size percentage controls. The header uses one line. Export format and both download buttons stay fixed at the bottom of the left sidebar in both views.
+- Full Screen/Grid controls are accessible icons at the bottom-right of the canvas, or the grid area in Grid View. They are editor overlays and are never included in exported pixels.
 - Large batches scroll within the grid or left image list; lower tools scroll separately from Layers.
 
 ### Text layers
@@ -62,7 +63,7 @@ Implemented on September 26, 2026: Full Screen/Grid views, expandable tools bene
 
 ### Watermarks
 
-- Eight account-specific Saved Watermarks sections. Click an account to expand its templates underneath; click again to close.
+- Eight account-specific Saved Watermarks sections. Each account occupies its own line. Click an account to expand its templates below the complete account list; click again to close.
 - 57 bundled PNG templates, including eight Elite templates, available to every clone of the repository.
 - Upload, rename, select, disable, and delete personal watermark templates.
 - Apply watermark changes only to the selected left-side image or Ctrl/Command-selected images.
@@ -115,7 +116,7 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 - Keep uploaded image filenames without adding `Photo Studio`. The chosen format determines the extension. ZIP name collisions within each folder receive a number such as `DT (2).jpg` so every image remains available.
 - A batch assigned entirely to DSA eBay exports images directly inside `DSA eBay.zip`, without subfolders. Other or mixed-account batches contain `Main/` and `unmain/`: Normal-template images go in `unmain/`, all others in `Main/`, with both folders present even when one is empty. Layout follows actual template assignments, not the account currently being browsed. Filename collisions are numbered in either layout.
 - Batch ZIP names match the applied template's account folder, such as `Elite.zip`, `DIY.zip`, or `US Auto Nation.zip`. Mixed accounts use their folder names joined with ` + `; batches without an assigned template keep `photo-studio-batch.zip`.
-- Export prepared eBay listing images with the header's current-image or Export Batch controls.
+- Export prepared eBay listing images with the current-image or Export Batch controls at the bottom of the left sidebar.
 
 ## Run locally
 
@@ -171,7 +172,7 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 
 ## Validation
 
-`tests/workspace-text.browser.cjs` passes 47 checks covering the new views and sidebar, inline account panels, all text controls, history, selection/navigation, text/group/copy behavior, workflow/unmain copies, font fallback, export pixels and a downloaded ZIP. A 35-image batch scrolls inside the workspace. Layout is checked at desktop, smaller desktop and mobile sizes. The five existing history/layer/Listing/background suites also passed (220 checks total). See the workspace handoff for details.
+`tests/workspace-text.browser.cjs` passes 53 checks covering the revised single-line header, separate size/shadow sections, bottom-right icon controls, fixed left-side downloads, account templates below all accounts, all text controls, history, selection/navigation, text/group/copy behavior, workflow/unmain copies, font fallback, export pixels and a downloaded ZIP. A 35-image batch scrolls inside the workspace. Layout is checked at desktop, smaller desktop and mobile sizes. The initial workspace implementation also passed five existing history/layer/Listing/background suites (220 checks with the initial 47-check workspace suite). The layout revision reran the expanded 53-check workspace suite. See the workspace handoff for details.
 
 `tests/background-toggle.browser.cjs` passes 17 checks with its generated fixture and 25 checks when run with the supplied `9.jpg` and `FullSet.jpg`. Real clicks and keyboard events verify pressed/enabled state, deselection, exact original-PNG restoration, cached repeated toggles, numeric-field Ctrl+B, Undo/Redo, prepared-source restoration, duplicates, groups, deleted base layers and Close View protection. Optional image paths can be passed as command-line arguments; the supplied photos remain outside the repository.
 

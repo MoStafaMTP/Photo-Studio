@@ -2447,8 +2447,6 @@ function clearWatermarkPreviewUrls() {
 function renderWatermarkLibrary() {
   checkpointHistory();
   refreshListingPreview();
-  // Detach the reusable template panel before replacing its account wrapper.
-  watermarkTemplatePanel.remove();
   watermarkSectionList.replaceChildren();
   if (expandedWatermarkSection != null) expandedWatermarkSection = activeWatermarkSection;
   WATERMARK_SECTION_DISPLAY_ORDER.forEach((index) => {
@@ -2459,12 +2457,12 @@ function renderWatermarkLibrary() {
     button.setAttribute('aria-expanded', String(expanded)); button.setAttribute('aria-controls', watermarkTemplatePanel.id);
     const name = document.createElement('span'); name.textContent = section.name; button.append(name);
     button.addEventListener('click', () => toggleWatermarkAccount(index)); wrapper.append(button);
-    if (expanded) wrapper.append(watermarkTemplatePanel);
     watermarkSectionList.append(wrapper);
   });
   watermarkTemplatePanel.hidden = expandedWatermarkSection == null;
   watermarkTemplatePanel.classList.toggle('is-visible', expandedWatermarkSection != null);
-  if (expandedWatermarkSection == null) watermarkLibrary.append(watermarkTemplatePanel);
+  // Every account stays in place; its templates expand below the complete list.
+  watermarkSectionList.after(watermarkTemplatePanel);
 
   clearWatermarkPreviewUrls();
   const section = watermarkSections[activeWatermarkSection];

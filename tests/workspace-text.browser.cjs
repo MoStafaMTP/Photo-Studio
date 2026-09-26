@@ -22,15 +22,31 @@ const os = require('node:os');
       await Promise.all(items.map(item => item.image.decode())); selectImage(0);
     });
     check('Full Screen View remains the default', await page.getByRole('button', {name:'Full Screen View', exact:true}).getAttribute('aria-pressed') === 'true');
-    check('Resize moved out of the header and beside Image Size', await page.locator('#image-tools-section #resize-width').count() === 1 && await page.locator('.header-actions #resize-width').count() === 0);
+    check('Resize is below Image Size and Shadow is an independent section', await page.evaluate(() => {
+      const size = document.querySelector('.image-size-control').getBoundingClientRect(), resize = resizeGroup.getBoundingClientRect();
+      return resize.top > size.bottom && resizeGroup.closest('details').id === 'image-tools-section'
+        && shadowToggle.closest('details').id === 'shadow-tools-section' && !headerActions.contains(resizeGroup);
+    }));
+    check('Header tools share a single line', await page.evaluate(() => {
+      const header = siteHeader.getBoundingClientRect(), logo = siteHeader.querySelector('.logo').getBoundingClientRect(), tools = headerActions.getBoundingClientRect();
+      return header.height === 68 && Math.abs(logo.top + logo.height/2 - tools.top - tools.height/2) < 2 && !siteHeader.contains(viewSwitch) && !siteHeader.contains(exportOne);
+    }));
+    check('Accessible icon-only view controls sit inside the canvas bottom-right', await page.evaluate(() => {
+      const image = canvasWrap.getBoundingClientRect(), controls = viewSwitch.getBoundingClientRect();
+      return viewSwitch.parentElement === canvasWrap && !viewSwitch.textContent.trim() && image.right-controls.right >= 10 && image.right-controls.right < 15 && image.bottom-controls.bottom >= 10 && image.bottom-controls.bottom < 15;
+    }));
+    const beforeControlWheel = await page.evaluate(() => files[0].scale);
+    await page.getByRole('button', {name:'Grid View', exact:true}).hover(); await page.mouse.wheel(0,-120);
+    check('Scrolling over view controls does not resize the image', await page.evaluate(() => files[0].scale) === beforeControlWheel);
     check('Layers stays outside all collapsible sections', await page.locator('.editor-toolbar > .layer-control').count() === 1);
     await page.locator('#saved-watermarks-section > summary').click();
     await page.locator('[data-watermark-section="0"]').hover();
     check('Hover does not open an account flyout', await page.locator('#account-template-panel').isHidden());
     await page.locator('[data-watermark-section="0"]').click();
-    check('Account templates expand beneath the clicked account', await page.evaluate(() => {
-      const panel = watermarkTemplatePanel.getBoundingClientRect(), button = watermarkSectionButton(0).getBoundingClientRect();
-      return panel.top >= button.bottom && panel.left >= button.left - 10 && watermarkTemplatePanel.parentElement.classList.contains('watermark-account');
+    check('Accounts stay on separate lines and templates expand below the entire list', await page.evaluate(() => {
+      const panel = watermarkTemplatePanel.getBoundingClientRect(), accounts = [...watermarkSectionList.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+      return panel.top >= Math.max(...accounts.map(rect => rect.bottom)) && watermarkSectionList.nextElementSibling === watermarkTemplatePanel
+        && accounts.every((rect, index) => !index || rect.top >= accounts[index-1].bottom && Math.abs(rect.left-accounts[0].left) < 1);
     }));
     await page.locator('[data-watermark-section="0"]').click();
     check('Clicking the account again collapses templates', await page.locator('#account-template-panel').isHidden());
@@ -70,6 +86,11 @@ const os = require('node:os');
     const beforeView = await page.evaluate(() => ({key:historyKey(readHistoryState()),undo:undoStack.length,selected:[...selectedLayerIds]}));
     await page.getByRole('button', {name:'Grid View', exact:true}).click();
     await page.waitForFunction(() => workspacePreviewCache.size === 3 && !pendingWorkspacePreviews.size);
+    check('Grid keeps downloads on the left and the view switch at the bottom-right', await page.evaluate(() => {
+      const side = document.querySelector('.editor-sidebar').getBoundingClientRect(), downloads = exportActions.getBoundingClientRect(), grid = batchGridView.getBoundingClientRect(), controls = viewSwitch.getBoundingClientRect();
+      return side.width > 0 && exportActions.parentElement.classList.contains('editor-sidebar') && downloads.bottom <= side.bottom && side.bottom-downloads.bottom < 25
+        && viewSwitch.parentElement === batchGridView && grid.right-controls.right >= 10 && grid.right-controls.right < 15 && grid.bottom-controls.bottom >= 10 && grid.bottom-controls.bottom < 15 && imageDrag === null;
+    }));
     check('Grid displays larger current compositions', await page.locator('.batch-grid-card').count() === 3 && (await page.locator('.grid-select').first().boundingBox()).width > 200);
     check('Switching views preserves all edits and history', await page.evaluate(before => historyKey(readHistoryState()) === before.key && undoStack.length === before.undo && JSON.stringify([...selectedLayerIds]) === JSON.stringify(before.selected), beforeView));
     check('Grid preview uses edited pixels, not the original upload', await page.evaluate(() => workspaceCards.get(files[0].id).querySelector('img').src === workspacePreviewCache.get(files[0].id).url && workspacePreviewCache.get(files[0].id).url !== files[0].url));
@@ -158,10 +179,14 @@ const os = require('node:os');
     check('Large batches scroll inside the grid without growing the page',largeLayout.gridScroll>largeLayout.gridHeight && largeLayout.body===largeLayout.viewport);
     await page.getByRole('button',{name:'Full Screen View',exact:true}).click();
     check('Full Screen View retains a separately scrolling image list',await page.evaluate(()=>thumbList.scrollHeight>thumbList.clientHeight && document.documentElement.scrollHeight===innerHeight));
+    const downloadBottom = await page.locator('.editor-actions').evaluate(el=>el.getBoundingClientRect().bottom);
+    await page.locator('#thumb-list').evaluate(el=>el.scrollTop=el.scrollHeight);
+    check('Scrolling the image list keeps both download buttons fixed and visible', await page.locator('.editor-actions').evaluate(el=>el.getBoundingClientRect().bottom) === downloadBottom && await page.locator('#export-one').isVisible() && await page.locator('#export-all').isVisible());
     await page.setViewportSize({width:1280,height:720});
     check('Smaller desktop keeps layers and section controls reachable',await page.locator('.sidebar-sections').evaluate(el=>el.clientHeight>100));
     await page.setViewportSize({width:390,height:844});
     check('Mobile does not create horizontal document overflow', await page.evaluate(()=>document.documentElement.scrollWidth===innerWidth));
+    check('Narrow screens retain one header line and accessible left-side downloads', await page.evaluate(() => siteHeader.offsetHeight === 68 && exportActions.getBoundingClientRect().bottom <= innerHeight && document.querySelector('.editor-sidebar').getBoundingClientRect().width > 0));
     check('No uncaught browser errors',errors.length===0);
     console.log(JSON.stringify({passed:checks.length,checks,errors},null,2));
   } catch(error) { await page.screenshot({path:path.join(os.tmpdir(),'photo-studio-test-failure.png')}); console.error(JSON.stringify({passed:checks,errors})); throw error; }

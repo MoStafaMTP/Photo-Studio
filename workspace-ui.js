@@ -11,13 +11,16 @@ function sidebarSection(id, title, open = false) {
   const body = document.createElement('div'); body.className = 'sidebar-section-body';
   section.append(summary, body); sidebarSections.append(section); return {section, body};
 }
-const imageTools = sidebarSection('image-tools-section', 'Image Size, Shadow', true);
+const imageTools = sidebarSection('image-tools-section', 'Image Size', true);
 const sizingControls = document.createElement('div'); sizingControls.className = 'sizing-controls';
 resizeGroup.classList.remove('header-tool-group', 'header-resize-control'); resizeGroup.classList.add('canvas-resize-control');
 resizeGroup.querySelector('.toolbar-label').textContent = 'Resize canvas (px)';
 resizeWidth.setAttribute('aria-label', 'Canvas width in pixels'); resizeHeight.setAttribute('aria-label', 'Canvas height in pixels');
 sizingControls.append(document.querySelector('.image-size-control'), resizeGroup);
-imageTools.body.append(sizingControls, document.querySelector('.shadow-control'));
+imageTools.body.append(sizingControls);
+const shadowTools = sidebarSection('shadow-tools-section', 'Shadow', true);
+const shadowControls = document.querySelector('.shadow-control');
+shadowControls.querySelector('.toolbar-label')?.remove(); shadowTools.body.append(shadowControls);
 const savedWatermarks = sidebarSection('saved-watermarks-section', 'Saved Watermarks');
 watermarkLibrary.querySelector(':scope > .toolbar-label')?.remove(); savedWatermarks.body.append(watermarkLibrary);
 const textTools = sidebarSection('text-editor-section', 'Text Editor'); initializeTextEditor(textTools.section, textTools.body);
@@ -26,13 +29,17 @@ sidebarTools.replaceChildren(layerGroup, sidebarSections, fitSelect);
 const viewSwitch = document.createElement('div'); viewSwitch.className = 'workspace-view-switch'; viewSwitch.setAttribute('role', 'group'); viewSwitch.setAttribute('aria-label', 'Workspace view');
 const viewButtons = ['full', 'grid'].map(view => {
   const button = document.createElement('button'); button.type = 'button'; button.dataset.workspaceView = view;
-  button.innerHTML = `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">${view === 'full' ? '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16m9-16v16"/>' : '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'}</svg><span>${view === 'full' ? 'Full Screen View' : 'Grid View'}</span>`;
+  const label = view === 'full' ? 'Full Screen View' : 'Grid View';
+  button.title = label; button.setAttribute('aria-label', label);
+  button.innerHTML = `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">${view === 'full' ? '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16m9-16v16"/>' : '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'}</svg>`;
   button.setAttribute('aria-pressed', String(view === 'full')); button.addEventListener('click', () => setWorkspaceView(view)); viewSwitch.append(button); return button;
 });
-const siteHeader = document.querySelector('.site-header'), headerPrimary = document.createElement('div'); headerPrimary.className = 'header-primary';
+// These are editor controls, not part of the image or its drag/scroll gestures.
+viewSwitch.addEventListener('pointerdown', event => event.stopPropagation());
+viewSwitch.addEventListener('wheel', event => event.stopPropagation());
+canvasWrap.append(viewSwitch);
+const siteHeader = document.querySelector('.site-header');
 const exportActions = document.querySelector('.editor-actions'); exportActions.prepend(headerExportControl);
-headerPrimary.append(siteHeader.querySelector('.logo'), viewSwitch, document.querySelector('#open-listing'), exportActions);
-siteHeader.prepend(headerPrimary);
 new ResizeObserver(() => document.documentElement.style.setProperty('--studio-header-height', `${siteHeader.offsetHeight}px`)).observe(siteHeader);
 
 const batchGridView = document.createElement('section'); batchGridView.className = 'batch-grid-view'; batchGridView.hidden = true;
@@ -45,9 +52,12 @@ batchGridView.addEventListener('dragover', event => { if (!event.dataTransfer.ty
 batchGridView.addEventListener('dragleave', event => { if (!batchGridView.contains(event.relatedTarget)) batchGridView.classList.remove('dragging'); });
 batchGridView.addEventListener('drop', event => { event.preventDefault(); batchGridView.classList.remove('dragging'); addImages(event.dataTransfer.files); });
 function setWorkspaceView(view) {
+  const focusedViewButton = viewSwitch.contains(document.activeElement) ? document.activeElement : null;
   workspaceView = view === 'grid' ? 'grid' : 'full'; workspaceShell.classList.toggle('is-grid', workspaceView === 'grid');
   stage.hidden = workspaceView === 'grid'; batchGridView.hidden = workspaceView !== 'grid';
+  (workspaceView === 'grid' ? batchGridView : canvasWrap).append(viewSwitch);
   viewButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.workspaceView === workspaceView)));
+  focusedViewButton?.focus({preventScroll: true});
   requestWorkspaceRefresh();
 }
 function visibleBatchImageButton(index) {
