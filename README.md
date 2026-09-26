@@ -28,6 +28,7 @@ Detailed handoffs are available in:
 - Drag layers with optional Shift axis locking.
 - Move layers with arrow keys or Shift+Arrow for faster movement.
 - Add, duplicate, delete, select, group, resize, and reorder layers.
+- Duplicate and copy/paste preserve the displayed layer size, rotation, flips, shadows, and prepared product cutout. Prepared copies can toggle between their original background and saved cutout.
 - Click empty space outside the canvas to deselect layers; editing controls preserve the selection.
 - Use `Delete` to remove selected layers, `Ctrl + C`/`Ctrl + V` to copy and paste them, `Ctrl + Enter` to center them, and `Ctrl + B` to toggle their backgrounds off or on.
 - Per-layer shadows with opacity, angle, and distance controls.
@@ -54,6 +55,7 @@ Detailed handoffs are available in:
 - Select Main, Passenger Side, or Normal templates automatically.
 - Apply Workflow creates an additional editable Normal-template image for each DT/DB main source, named with ` unmain` before the extension (for example, `DB unmain.jpg`). Originals keep their templates. The review shows planned copies, and repeated runs reuse existing copies. PT and Full Set do not generate unmain copies.
 - After Apply Workflow, all images assigned a Normal template appear below the other images. Order within each group, the active image, and multi-image selection are preserved.
+- Existing layered arrangements show **Keep layout** in Listing. Changing account/material or applying another watermark preserves layer positions, sizes, transforms, stacking order, and background edits. Automatic product fitting applies to single original layers; compositions keep their manual placement. Generated unmain copies inherit a source composition.
 - Review every image and resolved template before processing.
 - Close View filenames (`Close View`, `Close_View`, `Close-View`, or `CloseView`, case-insensitive) use the account's Normal template and keep the source image at its original pixel size with its background intact. This also takes priority when the filename contains a part code such as `DT`.
 - Use Apply Workflow to prepare the images, then review them in the editor and use Export Batch to download a ZIP.
@@ -136,6 +138,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. They are exempt from safe-area fitting and the 50px inset so that their original size and background are preserved. A source larger than the output canvas can extend beyond its edges; increase the output dimensions when needed. Manual enlargement is available, but shrinking below 100% and background removal are blocked for Close View sources and their layer/batch copies.
 
 ## Validation
+
+Layer duplication and account switching passed 30 checks in `tests/layer-layout.browser.cjs`: exact duplicate sizes at multiple rotations and fit modes, large scales, prepared cutout/export pixel bounds, background toggling, clipboard and group copies, repeated account changes, Main/Normal/manual watermark changes, layer order and selection, deleted original layers, composed unmain outputs, Close View preservation, and continued manual editing.
 
 Normal-template fitting passed 54 checks in `tests/normal-template-fit.browser.cjs`, including native-pixel 50px header clearance for all seven Normal templates at four output sizes, rotation/flips, wide products, custom margins, full-width banners, Close View preservation and export. The sample Elite product grew 8% and its top whitespace decreased from 229px to 103px.
 

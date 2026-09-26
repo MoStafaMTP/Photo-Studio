@@ -57,6 +57,8 @@ Apply Workflow creates a local Normal-template `unmain` output for each resolved
 
 After Apply Workflow, images assigned a Normal template appear below all other images, retaining order within each group and preserving the active image and multi-image selection. The returned plan follows this editor order; image IDs remain stable.
 
+Images already containing added layers retain their complete arrangement when Apply Workflow changes the account/material templates. Original-layer deletion, transforms, background edits, and stacking order are preserved; generated unmain outputs inherit those compositions. Automatic fitting remains available for single original layers. The Listing review marks preserved compositions as **Keep layout**.
+
 Landscape uploads and products wider than their height remain vertically centered in the safe area. Only portrait Normal-template products use the optional upper-center enlargement; Close View rules remain unchanged.
 
 ## Browser API

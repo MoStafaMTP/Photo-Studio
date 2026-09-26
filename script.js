@@ -466,6 +466,7 @@ function getImageSource(item) {
   return item.processed;
 }
 function getAddedLayerSource(layer) {
+  if (!isCloseViewImage(layer) && layer.sourceSnapshot?.removeBg === Boolean(layer.removeBg)) return layer.sourceSnapshot.image;
   if (isCloseViewImage(layer) || !layer.removeBg) return layer.image;
   if (!layer.processed) layer.processed = createBackgroundRemovedSource(layer.image);
   return layer.processed;
@@ -728,10 +729,17 @@ function smartProductGeometry(item) {
   const preparation = item?.smartPrep;
   if (isCloseViewImage(item) || !preparation?.foreground || !preparation?.bounds) return null;
   const bounds = preparation.bounds, safeRect = smartSafeRect(preparation);
-  if (!safeRect.width || !safeRect.height) return null;
   const rotation = item.rotation || 0, radians = rotation * Math.PI / 180;
   const rotatedWidth = Math.abs(bounds.width * Math.cos(radians)) + Math.abs(bounds.height * Math.sin(radians));
   const rotatedHeight = Math.abs(bounds.width * Math.sin(radians)) + Math.abs(bounds.height * Math.cos(radians));
+  if (preparation.layout) {
+    const layout = preparation.layout, unit = Math.min(canvas.width, canvas.height), scale = (item.scale ?? 100) / 100;
+    const drawWidth = layout.width * unit * scale, drawHeight = layout.height * unit * scale;
+    return {x: layout.x * canvas.width + (item.offsetX || 0), y: layout.y * canvas.height + (item.offsetY || 0),
+      drawWidth, drawHeight, width: Math.abs(drawWidth * Math.cos(radians)) + Math.abs(drawHeight * Math.sin(radians)),
+      height: Math.abs(drawWidth * Math.sin(radians)) + Math.abs(drawHeight * Math.cos(radians)), bounds, safeRect};
+  }
+  if (!safeRect.width || !safeRect.height) return null;
   const fit = Math.min(safeRect.width / Math.max(1, rotatedWidth), safeRect.height / Math.max(1, rotatedHeight));
   const geometry = fitNormalTemplateTop(item, {
     x: safeRect.x + safeRect.width / 2,
@@ -747,6 +755,20 @@ function smartProductGeometry(item) {
   return {...geometry, x: geometry.x + (item.offsetX || 0), y: geometry.y + (item.offsetY || 0),
     drawWidth: geometry.drawWidth * scale, drawHeight: geometry.drawHeight * scale,
     width: geometry.width * scale, height: geometry.height * scale};
+}
+function hasLayerComposition(item) { return Boolean(item.baseRemoved || item.layers?.length); }
+function preserveCompositionLayout(item) {
+  if (!hasLayerComposition(item) || item.smartPrep?.layout) return;
+  const geometry = smartProductGeometry(item);
+  if (!geometry) return;
+  const scale = (item.scale ?? 100) / 100, unit = Math.min(canvas.width, canvas.height);
+  // Freeze the fitted product before changing the watermark that determined its fit.
+  // Keep manual scale/offset/rotation independent of this initial placement.
+  item.smartPrep = {...item.smartPrep, layout: {
+    x: (geometry.x - (item.offsetX || 0)) / canvas.width,
+    y: (geometry.y - (item.offsetY || 0)) / canvas.height,
+    width: geometry.drawWidth / scale / unit, height: geometry.drawHeight / scale / unit
+  }};
 }
 function drawSmartPreparedBase(item) {
   const preparation = item.smartPrep, backgroundSize = imageSourceSize(preparation.background);
@@ -812,7 +834,7 @@ function getAddedLayerDrawRect(layer) {
   }
   const fitWidth = (canvas.width * .32) / sourceWidth, fitHeight = (canvas.height * .32) / sourceHeight;
   const baseScale = layer.fit === 'cover' ? Math.max(fitWidth, fitHeight) : Math.min(fitWidth, fitHeight);
-  const scale = baseScale * (layer.scale ?? 100) / 100;
+  const scale = baseScale * (layer.sizeMultiplier ?? 1) * (layer.scale ?? 100) / 100;
   return {x: layer.x ?? canvas.width / 2, y: layer.y ?? canvas.height / 2, width: sourceWidth * scale, height: sourceHeight * scale};
 }
 function getAddedLayerRect(layer) {
@@ -947,12 +969,9 @@ function duplicateSelectedLayers() {
       const source = item.layers.find((layer) => layer.id === id);
       return source ? {...source, id: createLayerId(), name: `${source.name} copy`.slice(0, 60), x: (source.x ?? canvas.width / 2) + 35, y: (source.y ?? canvas.height / 2) + 35} : null;
     }
-    const rect = getBaseLayerRect(item);
-    const copy = {id: createLayerId(), file: item.file, name: `${item.displayName || item.file.name} copy`.slice(0, 60), url: item.url, image: item.image, closeView: isCloseViewImage(item), x: rect.x + 35, y: rect.y + 35, scale: 100, fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: Boolean(item.removeBg), processed: null, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
-    const copyRect = getAddedLayerRect(copy);
-    const matchingFactor = copyRect.width && copyRect.height ? Math.min(rect.width / copyRect.width, rect.height / copyRect.height) : 1;
-    copy.scale = Math.max(10, Math.min(500, matchingFactor * 100));
-    return copy;
+    const descriptor = layerCopyDescriptor(item, 'base');
+    return {...descriptor, id: createLayerId(), name: `${descriptor.name} copy`.slice(0, 60),
+      url: item.url, image: item.image, x: descriptor.x + 35, y: descriptor.y + 35};
   }).filter(Boolean);
   if (!copies.length) return;
   item.layers.push(...copies);
@@ -966,10 +985,18 @@ function layerCopyDescriptor(item, id) {
     return source ? {...source, id: null, url: null, image: null, processed: null} : null;
   }
   const rect = getBaseLayerRect(item);
-  const descriptor = {id: null, file: item.file, name: item.displayName || item.file.name, url: null, image: item.image, closeView: isCloseViewImage(item), x: rect.x, y: rect.y, scale: 100, fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: Boolean(item.removeBg), processed: null, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
-  const descriptorRect = getAddedLayerRect(descriptor);
-  const matchingFactor = descriptorRect.width && descriptorRect.height ? Math.min(rect.width / descriptorRect.width, rect.height / descriptorRect.height) : 1;
-  descriptor.scale = Math.max(10, Math.min(500, matchingFactor * 100));
+  const geometry = item.smartPrep?.enabled ? smartProductGeometry(item) : null;
+  let sourceSnapshot = null;
+  if (geometry) {
+    const {bounds} = geometry, image = document.createElement('canvas'); image.width = bounds.width; image.height = bounds.height;
+    image.getContext('2d').drawImage(item.smartPrep.foreground, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, image.width, image.height);
+    sourceSnapshot = {image, removeBg: item.smartPrep.mode === 'separated'};
+  }
+  const descriptor = {id: null, file: item.file, name: item.displayName || item.file.name, url: null, image: item.image, closeView: isCloseViewImage(item), x: rect.x, y: rect.y, scale: Math.max(minimumLayerScale(item), item.scale ?? 100), fit: item.fit || fitSelect.value, rotation: item.rotation || 0, mirror: Boolean(item.mirror), flipY: Boolean(item.flipY), removeBg: sourceSnapshot ? sourceSnapshot.removeBg : Boolean(item.removeBg), processed: item.processed, sourceSnapshot, shadow: Boolean(item.shadow), shadowAngle: item.shadowAngle ?? 90, shadowDistance: item.shadowDistance ?? 18, shadowStrength: item.shadowStrength ?? 80};
+  const drawWidth = geometry?.drawWidth ?? getBaseLayerDrawSize(item, getImageSource(item)).width;
+  const descriptorRect = getAddedLayerDrawRect(descriptor);
+  // Keep the editable percentage; convert the base fit separately without a size cap.
+  descriptor.sizeMultiplier = descriptorRect.width ? drawWidth / descriptorRect.width : 1;
   descriptor.image = null;
   return descriptor;
 }
@@ -1769,6 +1796,7 @@ function listingStatusForRow(plan, row) {
   if (!plan.section || !plan.materialRule) return {text: 'Waiting', className: ''};
   if (!row.template) return {text: 'Missing', className: 'missing'};
   if (row.pendingGeneration) return {text: 'New unmain copy', className: ''};
+  if (hasLayerComposition(row.item)) return {text: 'Keep layout', className: ''};
   if (row.detection.closeView) return {text: 'Original size', className: ''};
   const preparationMatches = row.item.smartPrep?.templateKey === listingTemplateKey(plan.sectionIndex, row.template);
   if (listingSmartPrep.checked && preparationMatches) {
@@ -1958,7 +1986,7 @@ async function materializeUnmainRow(row) {
       const id = createLayerId(); idMap.set(layer.id, id);
       layers.push({...layer, ...asset, id, processed: null});
     }
-    return {...row.item, ...baseAsset, file, processed: null, smartPrep: null, thumbnailDataUrl: null, layers,
+    return {...row.item, ...baseAsset, file, processed: source.processed, smartPrep: source.smartPrep ? {...source.smartPrep} : null, thumbnailDataUrl: null, layers,
       layerOrder: allLayerEntityIds(source).map(id => id === 'base' ? 'base' : idMap.get(id)).filter(Boolean)};
   } catch (error) {
     loaded.forEach(asset => URL.revokeObjectURL(asset.url));
@@ -1984,13 +2012,13 @@ async function applyListingWatermarks() {
     const outputWidth = Math.max(360, Number(resizeWidth.value) || canvas.width);
     const outputHeight = Math.max(360, Number(resizeHeight.value) || canvas.height);
     for (const row of plan.rows) {
-      if (row.detection.closeView) continue;
+      if (row.detection.closeView || hasLayerComposition(row.item)) continue;
       const {safeArea} = templateAssets.get(listingTemplateKey(plan.sectionIndex, row.template));
       const safeRect = smartSafeRect({safeArea}, outputWidth, outputHeight);
       if (!safeRect.width || !safeRect.height) throw new Error(`${row.template.name}: the template margins leave no room for a 50px gap. Increase the output size or adjust the template margins.`);
     }
   }
-  let fallbackCount = 0, preparedCount = 0, closeViewCount = 0;
+  let fallbackCount = 0, preparedCount = 0, closeViewCount = 0, preservedCount = 0;
   const generatedItems = [];
   try {
     for (const row of plan.rows.filter(row => row.pendingGeneration)) {
@@ -1999,11 +2027,17 @@ async function applyListingWatermarks() {
     }
     for (let index = 0; index < plan.rows.length; index += 1) {
       const row = plan.rows[index], key = listingTemplateKey(plan.sectionIndex, row.template), asset = templateAssets.get(key);
+      const preserveLayout = hasLayerComposition(row.item);
+      if (preserveLayout) preserveCompositionLayout(row.item);
       row.item.watermarkImage = asset.image;
       row.item.watermarkEnabled = true;
       row.item.watermarkOpacity = 100;
       row.item.watermarkSection = plan.sectionIndex;
       row.item.watermarkTemplateId = row.template.id;
+      if (preserveLayout) {
+        preservedCount += 1;
+        continue;
+      }
       row.item.originalSize = Boolean(row.detection.closeView);
       if (row.detection.closeView) {
         row.item.smartPrep = null; row.item.removeBg = false; row.item.processed = null;
@@ -2044,7 +2078,8 @@ async function applyListingWatermarks() {
     : '';
   const closeViewMessage = closeViewCount ? ` ${closeViewCount} Close View image${closeViewCount === 1 ? '' : 's'} kept at original size with background intact.` : '';
   const generatedMessage = generatedItems.length ? ` Added ${generatedItems.length} Normal-template unmain cop${generatedItems.length === 1 ? 'y' : 'ies'} to the editor.` : '';
-  setStatus(`Listing workflow applied to ${plan.rows.length} image${plan.rows.length === 1 ? '' : 's'} for ${plan.section.name}.${preparationMessage}${closeViewMessage}${generatedMessage}`);
+  const preservedMessage = preservedCount ? ` Kept the existing layout of ${preservedCount} layered image${preservedCount === 1 ? '' : 's'}.` : '';
+  setStatus(`Listing workflow applied to ${plan.rows.length} image${plan.rows.length === 1 ? '' : 's'} for ${plan.section.name}.${preparationMessage}${closeViewMessage}${generatedMessage}${preservedMessage}`);
   return plan;
 }
 listingOpenButton.setAttribute('aria-controls', 'listing-panel');
@@ -2234,18 +2269,19 @@ async function selectWatermarkTemplate(sectionIndex, templateId) {
   selectedWatermarkSection = sectionIndex;
   activeWatermarkTemplateId = templateId;
   targets.forEach((item) => {
+    preserveCompositionLayout(item);
     item.watermarkImage = image;
     item.watermarkEnabled = true;
     item.watermarkOpacity = opacity;
     item.watermarkSection = sectionIndex;
     item.watermarkTemplateId = templateId;
   });
-  if (targets.some((item) => item.smartPrep)) {
+  if (targets.some((item) => item.smartPrep && !hasLayerComposition(item))) {
     const safeArea = await getWatermarkSafeArea(sectionIndex, template, image);
     targets.forEach((item) => {
       if (!item.smartPrep) return;
-      item.smartPrep.safeArea = {...safeArea};
-      item.smartPrep.templateKey = listingTemplateKey(sectionIndex, template);
+      if (hasLayerComposition(item)) return;
+      item.smartPrep = {...item.smartPrep, safeArea: {...safeArea}, templateKey: listingTemplateKey(sectionIndex, template)};
     });
   }
   opacityInput.value = opacity;
