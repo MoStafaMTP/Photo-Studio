@@ -18,7 +18,27 @@ Detailed handoffs are available in:
 - [`PHASE_1_1_HANDOFF.md`](PHASE_1_1_HANDOFF.md)
 - [`PHASE_1_2_HANDOFF.md`](PHASE_1_2_HANDOFF.md)
 
+## Workspace and text update
+
+Implemented on September 26, 2026: Full Screen/Grid views, expandable tools beneath fixed Layers, inline account templates, and editable text layers. [`WORKSPACE_UPDATE_HANDOFF.md`](WORKSPACE_UPDATE_HANDOFF.md) records the requirements, implementation, pre-update checkpoint and completed validation.
+
 ## Features
+
+### Views and sidebar
+
+- **Full Screen View** keeps the main canvas and left-side image list. **Grid View** displays the same batch as large current previews, with selection, edit, duplicate and delete controls. Double-click a preview to open it in Full Screen View.
+- Ctrl/Command multi-selection, Ctrl+Alt+A, Tab and Shift+Tab work in both views. Switching views preserves edits, layer selections, image order and Undo/Redo.
+- Layers stays open at the top. Independent **Image Size, Shadow**, **Saved Watermarks**, and **Text Editor** sections expand underneath it.
+- Resize canvas width/height is next to the Image Size percentage controls. Export remains in the header.
+- Large batches scroll within the grid or left image list; lower tools scroll separately from Layers.
+
+### Text layers
+
+- Add editable multiline text to the active image with font family/size, bold, italic, underline, strikethrough, color, alignment, opacity, line height and letter spacing.
+- Add an outline and shadow; shadow starts at 80% and uses the existing per-layer angle/distance controls.
+- Text supports selection, positioning, group movement/scaling, rotation, flipping, reordering, duplication, clipboard copy/paste and deletion. Text styling works on multiple selected text layers; content editing uses a single selected text layer.
+- Text changes participate in Undo/Redo, previews, all three export formats and ZIPs. Batch duplicates and generated unmain images retain independently editable text. Background removal skips text.
+- Export waits for fonts; unavailable optional web fonts use the same system fallback as the preview.
 
 ### Editing
 
@@ -42,7 +62,7 @@ Detailed handoffs are available in:
 
 ### Watermarks
 
-- Eight account-specific Saved Watermarks sections.
+- Eight account-specific Saved Watermarks sections. Click an account to expand its templates underneath; click again to close.
 - 57 bundled PNG templates, including eight Elite templates, available to every clone of the repository.
 - Upload, rename, select, disable, and delete personal watermark templates.
 - Apply watermark changes only to the selected left-side image or Ctrl/Command-selected images.
@@ -118,7 +138,10 @@ Then open <http://localhost:8000/>.
 | `script.js` | Editor, layers, watermark library, smart preparation, and export logic. |
 | `editor-history.js` | Whole-session edit history, state restoration and saved-watermark undo persistence. |
 | `styles.css` | Base editor styling. |
-| `viewport.css` | Final responsive layout and Listing UI styling. |
+| `viewport.css` | Editor and Listing UI styling. |
+| `workspace-ui.js` / `workspace-ui.css` | Shared Grid/Full Screen views, sidebar/header assembly, current previews and final responsive layout. |
+| `text-layers.js` | Editable text data, measurement/rendering, font readiness and Text Editor controls. |
+| `WORKSPACE_UPDATE_HANDOFF.md` | Completed workspace/text update, requirements and validation. |
 | `watermark-assets.js` | Portable embedded copies of all bundled watermark PNGs. |
 | `watermark-safe-areas.js` | Shared account/template spacing defaults transcribed from the supplied PDF. |
 | `listing-metadata.js` | CPIS metadata validation, image-role translation, and local filename fallback. |
@@ -132,7 +155,7 @@ Then open <http://localhost:8000/>.
 
 Personal watermark uploads and safe-area overrides are stored in the browser's IndexedDB database named `photo-studio-assets`. They persist on that browser profile but are not committed to Git.
 
-Undo/Redo history remains available while the current tab is open; it is not saved across reloads. Undoing personal-template uploads, renames, deletions or margin changes also updates browser storage. Selection/navigation and exports do not add editing steps; a new edit after Undo starts a new branch and clears Redo.
+Uploaded images, text layers and view state remain in the current session. Undo/Redo history remains available while the current tab is open; it is not saved across reloads. Undoing personal-template uploads, renames, deletions or margin changes also updates browser storage. Selection/navigation and exports do not add editing steps; a new edit after Undo starts a new branch and clears Redo.
 
 Bundled watermark templates are stored in the repository and work on every system.
 
@@ -147,6 +170,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. They are exempt from safe-area fitting and the 50px inset so that their original size and background are preserved. A source larger than the output canvas can extend beyond its edges; increase the output dimensions when needed. Manual enlargement is available, but shrinking below 100% and background removal are blocked for Close View sources and their layer/batch copies.
 
 ## Validation
+
+`tests/workspace-text.browser.cjs` passes 47 checks covering the new views and sidebar, inline account panels, all text controls, history, selection/navigation, text/group/copy behavior, workflow/unmain copies, font fallback, export pixels and a downloaded ZIP. A 35-image batch scrolls inside the workspace. Layout is checked at desktop, smaller desktop and mobile sizes. The five existing history/layer/Listing/background suites also passed (220 checks total). See the workspace handoff for details.
 
 `tests/background-toggle.browser.cjs` passes 17 checks with its generated fixture and 25 checks when run with the supplied `9.jpg` and `FullSet.jpg`. Real clicks and keyboard events verify pressed/enabled state, deselection, exact original-PNG restoration, cached repeated toggles, numeric-field Ctrl+B, Undo/Redo, prepared-source restoration, duplicates, groups, deleted base layers and Close View protection. Optional image paths can be passed as command-line arguments; the supplied photos remain outside the repository.
 

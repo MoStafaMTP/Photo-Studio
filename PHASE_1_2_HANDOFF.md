@@ -4,6 +4,10 @@
 **Implementation date:** September 22, 2026  
 **Baseline:** Frozen Phase 1.1 Listing archive at `C:\Users\Asus\Photo-Studio-Phase-1.1-Backup-2026-09-21.zip`
 
+## September 26 workspace extension
+
+The [workspace update handoff](WORKSPACE_UPDATE_HANDOFF.md) documents the completed Full Screen/Grid views, fixed Layers with expandable tools, inline account watermark templates, and editable text layers. It includes the pre-update Git checkpoint, implementation details and 220 passing browser checks. The Phase 1.2 Listing and background preparation behavior below remains in place; composed/generated images now also preserve text layers.
+
 ## What Phase 1.2 adds
 
 Phase 1.2 extends the Listing module with automatic product preparation before the selected watermark is applied.

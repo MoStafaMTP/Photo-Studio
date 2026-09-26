@@ -259,7 +259,7 @@ function addImages(fileList, {metadataByFile = null} = {}) {
   accepted.forEach((file) => {
     const item = { id: createBatchImageId(), file, displayName: file.name, url: URL.createObjectURL(file), image: new Image(), rotation: 0, mirror: false, flipY: false, offsetX: 0, offsetY: 0, scale: 100, fit: fitSelect.value, removeBg: false, processed: null, smartPrep: null, shadow: false, shadowAngle: 90, shadowDistance: 18, shadowStrength: 80, layers: [], layerOrder: ['base'], baseRemoved: false, watermarkImage: null, watermarkEnabled: false, watermarkOpacity: 100, watermarkSection: null, watermarkTemplateId: null };
     if (metadataByFile?.has(file)) item.listingMetadata = metadataByFile.get(file);
-    item.image.onload = () => { if (activeIndex === -1) selectImage(0); else if (files[activeIndex] === item) drawActive(); refreshListingPreview(); };
+    item.image.onload = () => { if (activeIndex === -1) selectImage(0); else if (files[activeIndex] === item) drawActive(); refreshListingPreview(); if (typeof requestWorkspaceRefresh === 'function') requestWorkspaceRefresh(); };
     item.image.onerror = () => { setStatus(`${file.name} could not be loaded.`); refreshListingPreview(); };
     item.image.src = item.url; files.push(item); added.push(item);
   });
@@ -369,6 +369,7 @@ function renderThumbs() {
     row.append(select, duplicate, remove); thumbList.appendChild(row);
   });
   imageCount.textContent = `${files.length} image${files.length === 1 ? '' : 's'}`; exportOne.disabled = exportAll.disabled = files.length === 0; updateRemoveBackgroundControls(); refreshListingPreview();
+  if (typeof requestWorkspaceRefresh === 'function') requestWorkspaceRefresh();
 }
 function duplicateDisplayName(name) {
   const match = name.match(/^(.*?)(\.[^.]*)?$/);
@@ -386,7 +387,7 @@ async function duplicateBatchImage(index) {
   const source = files[index]; if (!source) return;
   try {
     const baseAsset = await loadDuplicateAsset(source.file);
-    const layerAssets = await Promise.all((source.layers || []).map((layer) => loadDuplicateAsset(layer.file)));
+    const layerAssets = await Promise.all((source.layers || []).map((layer) => isTextLayer(layer) ? {} : loadDuplicateAsset(layer.file)));
     const idMap = new Map();
     const layers = (source.layers || []).map((layer, layerIndex) => {
       const id = createLayerId(); idMap.set(layer.id, id);
@@ -419,8 +420,8 @@ function getBackgroundTargetEntities(item) {
 }
 function updateRemoveBackgroundControls() {
   const item = files[activeIndex];
-  const selected = getBackgroundTargetEntities(item).filter((entity) => !isCloseViewImage(entity.data));
-  const eligible = files.flatMap(entry => allLayerEntityIds(entry).map(id => getLayerEntity(entry, id).data)).filter(entry => !isCloseViewImage(entry));
+  const selected = getBackgroundTargetEntities(item).filter((entity) => !isTextLayer(entity.data) && !isCloseViewImage(entity.data));
+  const eligible = files.flatMap(entry => allLayerEntityIds(entry).map(id => getLayerEntity(entry, id).data)).filter(entry => !isTextLayer(entry) && !isCloseViewImage(entry));
   const removed = Boolean(selected.length) && selected.every(entity => entity.data.removeBg);
   const mixed = !removed && selected.some(entity => entity.data.removeBg);
   removeBgButton.disabled = !selected.length;
@@ -460,11 +461,10 @@ function selectImage(index, {preserveBatchSelection = false} = {}) {
   renderThumbs(); renderLayerList(); syncSelectedLayerControls(); syncWatermarkControls();
   empty.hidden = true; canvas.hidden = false; watermark.hidden = false; drawActive();
 }
-function drawBackground() {
+function drawBackground(item = files[activeIndex]) {
   // Canvas resizing resets context options; restore smooth resampling every render.
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const item = files[activeIndex];
   const needsWhiteExport = exporting && (exportFormat.value === 'jpg' || (exportFormat.value === 'webp' && item?.removeBg));
   if (backgroundMode === 'color' || needsWhiteExport) {
     ctx.fillStyle = backgroundMode === 'color' ? backgroundColor.value : '#ffffff';
@@ -592,6 +592,7 @@ function refineCutoutEdges(pixels, backgroundCorners = null) {
   }
 }
 function isCloseViewImage(item) {
+  if (isTextLayer(item)) return false;
   if (!item) return false;
   // Resolved CPIS metadata takes priority, including a non-cv role on a cv filename.
   if (item.listingMetadata) {
@@ -1023,6 +1024,7 @@ function getBaseLayerRect(item) {
   };
 }
 function getAddedLayerDrawRect(layer) {
+  if (isTextLayer(layer)) return getTextLayerDrawRect(layer);
   const source = layer ? getAddedLayerSource(layer) : null;
   const sourceWidth = source?.naturalWidth || source?.width;
   const sourceHeight = source?.naturalHeight || source?.height;
@@ -1043,6 +1045,7 @@ function getAddedLayerRect(layer) {
   return {...drawRect, width: Math.abs(drawRect.width * Math.cos(radians)) + Math.abs(drawRect.height * Math.sin(radians)), height: Math.abs(drawRect.width * Math.sin(radians)) + Math.abs(drawRect.height * Math.cos(radians))};
 }
 function drawAddedLayer(layer) {
+  if (isTextLayer(layer)) { drawTextLayer(layer); return; }
   const source = getAddedLayerSource(layer);
   const sourceWidth = source?.naturalWidth || source?.width;
   if (!sourceWidth || (source instanceof HTMLImageElement && !source.complete)) return;
@@ -1107,6 +1110,7 @@ function syncSelectedLayerControls() {
   shadowToggle.classList.toggle('active', shadowEnabled);
   shadowToggle.textContent = shadowEnabled ? 'Shadow on' : 'Add shadow';
   updateRemoveBackgroundControls();
+  syncTextEditorControls();
 }
 function setLayerEntityCenter(item, id, x, y) {
   if (id === 'base') {
@@ -1224,7 +1228,7 @@ async function pasteCopiedLayers() {
   const item = files[activeIndex];
   if (!item) { setStatus('Upload an image before pasting layers.'); return false; }
   if (!layerClipboard.length) { setStatus('Copy one or more layers before pasting.'); return false; }
-  const assetResults = await Promise.allSettled(layerClipboard.map((entry) => loadDuplicateAsset(entry.file)));
+  const assetResults = await Promise.allSettled(layerClipboard.map((entry) => isTextLayer(entry) ? {} : loadDuplicateAsset(entry.file)));
   if (assetResults.some((result) => result.status === 'rejected')) {
     assetResults.forEach((result) => { if (result.status === 'fulfilled') URL.revokeObjectURL(result.value.url); });
     setStatus('The copied layers could not be pasted.');
@@ -1323,9 +1327,21 @@ function paintWatermark(item) {
   ctx.restore();
 }
 function drawWatermark() { drawActive(); }
+function renderEditorComposition(item) {
+  if (!item?.image.complete || !item.image.naturalWidth) return false;
+  const scale = Math.min(1, 900 / Math.max(item.image.naturalWidth, item.image.naturalHeight));
+  canvas.width = Math.max(360, Number(resizeWidth.value) || Math.round(item.image.naturalWidth * scale));
+  canvas.height = Math.max(360, Number(resizeHeight.value) || Math.round(item.image.naturalHeight * scale));
+  drawBackground(item); drawLayerStack(item); paintWatermark(item); return true;
+}
 function drawActive() {
   checkpointHistory();
-  const item = files[activeIndex]; if (!item?.image.complete || !item.image.naturalWidth) return; const scale = Math.min(1, 900 / Math.max(item.image.naturalWidth, item.image.naturalHeight)); canvas.width = Math.max(360, Number(resizeWidth.value) || Math.round(item.image.naturalWidth * scale)); canvas.height = Math.max(360, Number(resizeHeight.value) || Math.round(item.image.naturalHeight * scale)); drawBackground(); drawLayerStack(item); paintWatermark(item); if (!exporting) { scheduleThumbnailUpdate(item); drawLayerSelection(item); }
+  const item = files[activeIndex];
+  if (!renderEditorComposition(item)) return;
+  if (!exporting) {
+    scheduleThumbnailUpdate(item); drawLayerSelection(item); syncTextEditorControls();
+    if (typeof requestWorkspaceRefresh === 'function') requestWorkspaceRefresh();
+  }
 }
 function rotate(degrees) {
   const item = files[activeIndex], selected = item ? getSelectedLayerEntities(item) : [];
@@ -1383,7 +1399,7 @@ function renderLayerList() {
   const entities = item ? allLayerEntityIds(item).slice().reverse().map((id) => {
     if (id === 'base') return {id, name: `Original · ${item.displayName || item.file.name}`, url: item.url};
     const layer = (item.layers || []).find((entry) => entry.id === id);
-    return layer ? {id, name: layer.name, url: layer.url} : null;
+    return layer ? {id, name: layer.name, url: layer.url, text: isTextLayer(layer)} : null;
   }).filter(Boolean) : [];
   layerSelectAllButton.disabled = !entities.length;
   layerClearButton.disabled = !item || !selectedLayerIds.size;
@@ -1393,7 +1409,10 @@ function renderLayerList() {
   entities.forEach((entity) => {
     const row = document.createElement('label'); row.className = 'layer-row'; row.dataset.layerId = entity.id; row.draggable = true; row.title = 'Drag to change stacking order'; row.classList.toggle('active', selectedLayerIds.has(entity.id));
     const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = selectedLayerIds.has(entity.id);
-    const preview = document.createElement('img'); preview.src = entity.url; preview.alt = ''; preview.draggable = false;
+    const preview = document.createElement(entity.text ? 'span' : 'img');
+    if (entity.text) { preview.className = 'layer-text-preview'; preview.textContent = 'T'; preview.setAttribute('aria-hidden', 'true'); }
+    else { preview.src = entity.url; preview.alt = ''; }
+    preview.draggable = false;
     const name = document.createElement('span'); name.textContent = entity.name;
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) selectedLayerIds.add(entity.id); else selectedLayerIds.delete(entity.id);
@@ -1509,7 +1528,7 @@ let imageDrag = null;
 document.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 || imageDrag || canvas.contains(event.target)) return;
   // Keep the current selection while operating tools or selecting images/layers.
-  if (event.target.closest('button, input, select, textarea, label, a, [role="button"], [contenteditable="true"]')) return;
+  if (event.target.closest('button, input, select, textarea, label, summary, a, [role="button"], [contenteditable="true"]')) return;
   clearLayerSelection();
 });
 canvasWrap.addEventListener('pointerdown', (event) => {
@@ -1579,12 +1598,12 @@ removeBgButton.addEventListener('click', () => {
 function toggleSelectedLayerBackgrounds() {
   const item = files[activeIndex], selected = getBackgroundTargetEntities(item);
   if (!selected.length) { setStatus('Select one or more layers first.'); return false; }
-  const eligible = selected.filter((entity) => !isCloseViewImage(entity.data));
-  if (!eligible.length) { setStatus('Close View images keep their original background.'); return false; }
+  const eligible = selected.filter((entity) => !isTextLayer(entity.data) && !isCloseViewImage(entity.data));
+  if (!eligible.length) { setStatus('Background removal applies to image layers, except Close View images.'); return false; }
   const nextValue = !eligible.every((entity) => entity.data.removeBg);
   saveHistory();
   eligible.forEach((entity) => { entity.data.removeBg = nextValue; entity.data.originalBackgroundRestored = !nextValue; });
-  syncSelectedLayerControls(); drawActive(); setStatus((nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.') + (eligible.length < selected.length ? ' Close View images were skipped.' : ''));
+  syncSelectedLayerControls(); drawActive(); setStatus((nextValue ? 'Background removed from selected layers.' : 'Background restored for selected layers.') + (eligible.length < selected.length ? ' Text and Close View layers were skipped.' : ''));
   return true;
 }
 function isLayerShortcutTypingTarget(target) {
@@ -1601,7 +1620,7 @@ document.addEventListener('keydown', (event) => {
   const nextIndex = Math.max(0, Math.min(files.length - 1, activeIndex + (event.shiftKey ? -1 : 1)));
   if (nextIndex === activeIndex) return;
   selectImage(nextIndex);
-  const thumbnail = thumbList.querySelector(`[data-thumb-index="${nextIndex}"] .thumb-select`);
+  const thumbnail = typeof visibleBatchImageButton === 'function' ? visibleBatchImageButton(nextIndex) : thumbList.querySelector(`[data-thumb-index="${nextIndex}"] .thumb-select`);
   thumbnail?.focus({preventScroll: true});
   thumbnail?.scrollIntoView({block: 'nearest', inline: 'nearest'});
   setStatus(`Image ${nextIndex + 1} of ${files.length}: ${files[nextIndex].displayName || files[nextIndex].file.name}`);
@@ -1636,6 +1655,7 @@ removeAllBgButton.addEventListener('click', () => {
   let count = 0, skipped = 0;
   files.forEach((item) => {
     allLayerEntityIds(item).map(id => getLayerEntity(item, id).data).forEach((layer) => {
+      if (isTextLayer(layer)) return;
       if (isCloseViewImage(layer)) { skipped += 1; return; }
       layer.removeBg = true; layer.originalBackgroundRestored = false; count += 1;
     });
@@ -2244,7 +2264,7 @@ async function materializeUnmainRow(row) {
     const baseAsset = await loadDuplicateAsset(file); loaded.push(baseAsset);
     const layers = [], idMap = new Map();
     for (const layer of source.layers || []) {
-      const asset = await loadDuplicateAsset(layer.file); loaded.push(asset);
+      const asset = isTextLayer(layer) ? {} : await loadDuplicateAsset(layer.file); loaded.push(asset);
       const id = createLayerId(); idMap.set(layer.id, id);
       layers.push({...layer, ...asset, id, processed: null});
     }
@@ -2389,52 +2409,22 @@ watermarkControl.classList.add('watermark-library-controls');
 watermarkControl.querySelector('.toolbar-label')?.remove();
 watermarkLibrary.insertBefore(watermarkControl, watermarkSectionList);
 const watermarkTemplatePanel = watermarkLibrary.querySelector('.watermark-template-panel');
-document.body.append(watermarkTemplatePanel);
+watermarkTemplatePanel.id = 'account-template-panel';
+watermarkSectionList.setAttribute('role', 'group');
 const watermarkTemplateHeading = watermarkTemplatePanel.querySelector('strong');
 const watermarkTemplateGrid = watermarkTemplatePanel.querySelector('.watermark-template-grid');
 const addTemplateButton = watermarkTemplatePanel.querySelector('.watermark-add-template');
 setIconControl(addTemplateButton, 'plus', 'Add watermark templates');
-let watermarkFlyoutHideTimer = null;
-
+let expandedWatermarkSection = null;
 function watermarkSectionButton(index) {
   return watermarkSectionList.querySelector(`[data-watermark-section="${index}"]`);
 }
-function positionWatermarkTemplateFlyout(anchor) {
-  if (!anchor || !watermarkTemplatePanel.classList.contains('is-visible')) return;
-  const anchorRect = anchor.getBoundingClientRect();
-  const panelWidth = watermarkTemplatePanel.offsetWidth;
-  const panelHeight = watermarkTemplatePanel.offsetHeight;
-  const gap = 12;
-  const leftSpace = anchorRect.left - panelWidth - gap;
-  const left = leftSpace >= 12
-    ? leftSpace
-    : Math.min(window.innerWidth - panelWidth - 12, anchorRect.right + gap);
-  const top = Math.min(Math.max(12, anchorRect.top), Math.max(12, window.innerHeight - panelHeight - 12));
-  watermarkTemplatePanel.style.left = `${Math.max(12, left)}px`;
-  watermarkTemplatePanel.style.top = `${top}px`;
+function toggleWatermarkAccount(index) {
+  expandedWatermarkSection = expandedWatermarkSection === index ? null : index;
+  activeWatermarkSection = index;
+  renderWatermarkLibrary();
+  watermarkSectionButton(index)?.focus({preventScroll: true});
 }
-function showWatermarkTemplateFlyout(index, anchor) {
-  window.clearTimeout(watermarkFlyoutHideTimer);
-  if (activeWatermarkSection !== index) {
-    activeWatermarkSection = index;
-    renderWatermarkLibrary();
-    anchor = watermarkSectionButton(index);
-  }
-  watermarkTemplatePanel.classList.add('is-visible');
-  positionWatermarkTemplateFlyout(anchor || watermarkSectionButton(index));
-}
-function scheduleWatermarkTemplateFlyoutClose() {
-  window.clearTimeout(watermarkFlyoutHideTimer);
-  watermarkFlyoutHideTimer = window.setTimeout(() => watermarkTemplatePanel.classList.remove('is-visible'), 180);
-}
-watermarkTemplatePanel.addEventListener('pointerenter', () => window.clearTimeout(watermarkFlyoutHideTimer));
-watermarkTemplatePanel.addEventListener('pointerleave', scheduleWatermarkTemplateFlyoutClose);
-window.addEventListener('resize', () => {
-  if (watermarkTemplatePanel.classList.contains('is-visible')) positionWatermarkTemplateFlyout(watermarkSectionButton(activeWatermarkSection));
-});
-document.querySelector('.editor-toolbar').addEventListener('scroll', () => {
-  if (watermarkTemplatePanel.classList.contains('is-visible')) positionWatermarkTemplateFlyout(watermarkSectionButton(activeWatermarkSection));
-}, {passive: true});
 
 function watermarkSectionKey(index) { return `watermark-section-${index}-templates`; }
 function createWatermarkId() { return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
@@ -2457,26 +2447,24 @@ function clearWatermarkPreviewUrls() {
 function renderWatermarkLibrary() {
   checkpointHistory();
   refreshListingPreview();
-  watermarkSectionList.innerHTML = '';
+  // Detach the reusable template panel before replacing its account wrapper.
+  watermarkTemplatePanel.remove();
+  watermarkSectionList.replaceChildren();
+  if (expandedWatermarkSection != null) expandedWatermarkSection = activeWatermarkSection;
   WATERMARK_SECTION_DISPLAY_ORDER.forEach((index) => {
-    const section = watermarkSections[index];
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'watermark-section-button';
-    button.dataset.watermarkSection = index;
-    button.classList.toggle('active', index === activeWatermarkSection);
-    button.setAttribute('role', 'tab');
-    button.setAttribute('aria-selected', String(index === activeWatermarkSection));
-    const name = document.createElement('span'); name.textContent = section.name;
-    button.append(name);
-    button.addEventListener('pointerenter', () => showWatermarkTemplateFlyout(index, button));
-    button.addEventListener('pointerleave', scheduleWatermarkTemplateFlyoutClose);
-    button.addEventListener('click', () => {
-      showWatermarkTemplateFlyout(index, button);
-      setStatus(`${section.name} templates displayed.`);
-    });
-    watermarkSectionList.append(button);
+    const section = watermarkSections[index], expanded = index === expandedWatermarkSection;
+    const wrapper = document.createElement('div'); wrapper.className = 'watermark-account'; wrapper.classList.toggle('is-open', expanded);
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'watermark-section-button';
+    button.dataset.watermarkSection = index; button.classList.toggle('active', expanded);
+    button.setAttribute('aria-expanded', String(expanded)); button.setAttribute('aria-controls', watermarkTemplatePanel.id);
+    const name = document.createElement('span'); name.textContent = section.name; button.append(name);
+    button.addEventListener('click', () => toggleWatermarkAccount(index)); wrapper.append(button);
+    if (expanded) wrapper.append(watermarkTemplatePanel);
+    watermarkSectionList.append(wrapper);
   });
+  watermarkTemplatePanel.hidden = expandedWatermarkSection == null;
+  watermarkTemplatePanel.classList.toggle('is-visible', expandedWatermarkSection != null);
+  if (expandedWatermarkSection == null) watermarkLibrary.append(watermarkTemplatePanel);
 
   clearWatermarkPreviewUrls();
   const section = watermarkSections[activeWatermarkSection];
@@ -2655,6 +2643,7 @@ function canvasToBlob(canvasElement, mime, quality) {
   });
 }
 async function createExportBlob(item, format) {
+  await ensureTextLayerFonts([item]);
   const originalIndex = activeIndex, originalExporting = exporting;
   const exportIndex = files.indexOf(item);
   if (exportIndex < 0) throw new Error('Image is no longer available');
