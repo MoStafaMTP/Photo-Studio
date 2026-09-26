@@ -46,8 +46,42 @@ const os = require('node:os');
     await page.screenshot({path:path.join(os.tmpdir(),'photo-studio-adjustments.png')});
     check('Header tools share a single line', await page.evaluate(() => {
       const header = siteHeader.getBoundingClientRect(), logo = siteHeader.querySelector('.logo').getBoundingClientRect(), tools = headerActions.getBoundingClientRect();
-      return header.height === 68 && Math.abs(logo.top + logo.height/2 - tools.top - tools.height/2) < 2 && !siteHeader.contains(viewSwitch) && !siteHeader.contains(exportOne);
+      return header.height === 68 && Math.abs(logo.top + logo.height/2 - tools.top - tools.height/2) < 2 && !siteHeader.contains(viewSwitch) && siteHeader.contains(exportOne) && siteHeader.contains(exportAll) && siteHeader.contains(exportFormat);
     }));
+    check('Layers has five actions in one row without the removed tools or Movement lock', await page.evaluate(() => {
+      const buttons=[...layerGroup.querySelectorAll('.layer-primary-actions button')], rects=buttons.map(button=>button.getBoundingClientRect());
+      return buttons.length===5 && buttons[3].dataset.layerAction==='duplicate' && buttons[4].dataset.layerAction==='remove'
+        && rects.every(rect=>rect.top===rects[0].top) && !layerGroup.querySelector('[data-layer-action="smaller"], [data-layer-action="larger"], [data-layer-action="arrange"]') && !positionGroup.querySelector('select');
+    }));
+    const beforeLayerActions=await page.evaluate(()=>undoStack.length);
+    await page.getByRole('button',{name:'Duplicate selected layers',exact:true}).click();
+    await page.getByRole('button',{name:'Duplicate selected layers',exact:true}).click();
+    check('Relocated Duplicate button creates editable layers',await page.evaluate(()=>files[0].layers.length===2));
+    const beforeVertical=await page.evaluate(()=>{
+      withHistoryActionSync(()=>{
+        const item=files[0]; item.scale=35; item.offsetX=-200; item.offsetY=-350;
+        Object.assign(item.layers[0],{x:1080,y:510,scale:25});
+        Object.assign(item.layers[1],{x:300,y:1200,scale:20});
+        selectedLayerIds=new Set(['base',item.layers[0].id]); renderLayerList();syncSelectedLayerControls();drawActive();
+      });
+      return allLayerEntityIds(files[0]).map(id=>({id,...getLayerEntityRect(files[0],id)}));
+    });
+    await page.getByRole('button',{name:'Center selected layers vertically as a group',exact:true}).click();
+    check('Vertical center moves the selection together without resizing or moving other layers',await page.evaluate(before=>{
+      const item=files[0],near=(a,b)=>Math.abs(a-b)<.00001,after=before.map(rect=>getLayerEntityRect(item,rect.id)),dy=after[0].y-before[0].y;
+      return near(selectedLayerBounds(item).y,canvas.height/2) && !near(dy,0)
+        && after.every((rect,i)=>near(rect.x,before[i].x)&&near(rect.width,before[i].width)&&near(rect.height,before[i].height))
+        && near(after[1].y-before[1].y,dy) && near(after[2].y,before[2].y);
+    },beforeVertical));
+    await page.keyboard.press('Control+z');
+    check('Undo restores the positions before group vertical centering',await page.evaluate(before=>before.every(rect=>Math.abs(getLayerEntityRect(files[0],rect.id).y-rect.y)<.00001),beforeVertical));
+    await page.keyboard.press('Control+y');
+    check('Redo reapplies group vertical centering',await page.evaluate(()=>Math.abs(selectedLayerBounds(files[0]).y-canvas.height/2)<.00001));
+    await page.getByRole('button',{name:'Delete selected layers',exact:true}).click();
+    check('Relocated Delete button removes selected layers and preserves the remaining layer',await page.evaluate(()=>allLayerEntityIds(files[0]).length===1 && files[0].baseRemoved));
+    await page.keyboard.press('Control+z');
+    check('Deleting layers from the new action row remains undoable',await page.evaluate(()=>allLayerEntityIds(files[0]).length===3 && !files[0].baseRemoved));
+    await page.evaluate(depth=>{while(undoStack.length>depth)undo();},beforeLayerActions);
     check('Accessible icon-only view controls sit inside the canvas bottom-right', await page.evaluate(() => {
       const image = canvasWrap.getBoundingClientRect(), controls = viewSwitch.getBoundingClientRect();
       return viewSwitch.parentElement === canvasWrap && !viewSwitch.textContent.trim() && image.right-controls.right >= 10 && image.right-controls.right < 15 && image.bottom-controls.bottom >= 10 && image.bottom-controls.bottom < 15;
@@ -105,9 +139,9 @@ const os = require('node:os');
     const beforeView = await page.evaluate(() => ({key:historyKey(readHistoryState()),undo:undoStack.length,selected:[...selectedLayerIds]}));
     await page.getByRole('button', {name:'Grid View', exact:true}).click();
     await page.waitForFunction(() => workspacePreviewCache.size === 3 && !pendingWorkspacePreviews.size);
-    check('Grid hides the sidebar while retaining floating export and view controls', await page.evaluate(() => {
+    check('Grid hides the sidebar while retaining header exports and corner view controls', await page.evaluate(() => {
       const side = document.querySelector('.editor-sidebar').getBoundingClientRect(), downloads = exportActions.getBoundingClientRect(), grid = batchGridView.getBoundingClientRect(), controls = viewSwitch.getBoundingClientRect();
-      return side.width === 0 && exportActions.parentElement === workspace && downloads.width > 0 && downloads.bottom <= grid.bottom && grid.bottom-downloads.bottom < 25 && downloads.right < controls.left
+      return side.width === 0 && exportActions.parentElement === siteHeader && downloads.width > 0 && downloads.bottom <= siteHeader.getBoundingClientRect().bottom && downloads.right <= innerWidth
         && viewSwitch.parentElement === batchGridView && grid.right-controls.right >= 10 && grid.right-controls.right < 15 && grid.bottom-controls.bottom >= 10 && grid.bottom-controls.bottom < 15 && imageDrag === null;
     }));
     check('Grid displays larger current compositions', await page.locator('.batch-grid-card').count() === 3 && (await page.locator('.grid-select').first().boundingBox()).width > 200);
@@ -209,7 +243,7 @@ const os = require('node:os');
     check('Smaller desktop keeps layers and section controls reachable',await page.locator('.sidebar-sections').evaluate(el=>el.clientHeight>100));
     await page.setViewportSize({width:390,height:844});
     check('Mobile does not create horizontal document overflow', await page.evaluate(()=>document.documentElement.scrollWidth===innerWidth));
-    check('Narrow screens retain one header line and pinned downloads', await page.evaluate(() => siteHeader.offsetHeight === 68 && exportActions.getBoundingClientRect().bottom <= innerHeight && getComputedStyle(exportActions).position === 'fixed'));
+    check('Narrow screens retain one header line and visible export controls', await page.evaluate(() => siteHeader.offsetHeight === 68 && [exportFormat,exportOne,exportAll].every(control=>{const r=control.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=68;})));
     await page.getByRole('button',{name:'Grid View',exact:true}).click();
     await page.locator('.editor-workspace').evaluate(el=>el.scrollTop=el.scrollHeight);
     check('Mobile Grid hides the sidebar but keeps exports on screen while tools scroll', await page.evaluate(() => {

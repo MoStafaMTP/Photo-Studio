@@ -39,7 +39,7 @@ const path = require('node:path');
       inputValue(resizeHeight, 1700); undo(); check('Canvas height is independently undoable', resizeHeight.value === '1576'); redo();
       inputValue(backgroundColor, '#123456'); undo(); check('Background color edits are recorded without pointerdown', backgroundColor.value === '#ffffff'); redo();
       backgroundGroup.querySelector('[data-background="none"]').click(); undo(); check('Background mode is undoable', backgroundMode === 'color');
-      inputValue(movementLock, 'both', 'change'); undo(); check('Movement lock changes are recorded', movementLock.value === 'none');
+      check('Removed movement locks are absent from the UI and history settings', !document.querySelector('[aria-label="Movement lock"]') && !Object.hasOwn(readHistoryState().settings, 'movementLock'));
       inputValue(exportFormat, 'webp', 'change'); undo(); check('Export format settings are undoable', exportFormat.value === 'jpg');
       shadowToggle.click(); inputValue(shadowAngle, 91); inputValue(shadowAngle, 92); undo();
       check('One-degree shadow adjustments are individually undoable', first.shadowAngle === 91 && angleValue.textContent === '91°');

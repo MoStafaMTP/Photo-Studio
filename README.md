@@ -30,7 +30,7 @@ Implemented on September 26, 2026: Full Screen/Grid views, an icon sidebar besid
 - Ctrl/Command multi-selection, Ctrl+Alt+A, Tab and Shift+Tab work in both views. Switching views preserves edits, layer selections, image order and Undo/Redo.
 - Layers stays open at the top. Three sidebar icons open **Image Size & Shadow**, **Saved Watermarks**, or **Text Editor** below Layers; only the selected panel is visible. Image Size & Shadow includes the Background controls previously in the header, including background removal.
 - Image Size & Shadow opens by default. Selecting a text layer opens Text Editor. Each icon has a tooltip and accessible label; Up/Down, Home and End navigate the focused icon rail without moving layers. Panel switching preserves edits, selection and panel scroll positions.
-- Resize canvas width/height is below the Image Size percentage controls. The header uses one line. Export format and both download buttons float at the bottom-left of the workspace, outside the sidebar, and remain visible in both views while image lists scroll.
+- Resize canvas width/height is below the Image Size percentage controls. The header uses one line. Export format, Export current and Export Batch stay visible at its right edge in both views while image lists scroll. On narrow screens the export buttons use icons with tooltips and accessible names.
 - Full Screen/Grid controls are accessible icons at the bottom-right of the canvas, or the grid area in Grid View. They are editor overlays and are never included in exported pixels.
 - Large batches scroll within the grid or left image list; lower tools scroll separately from Layers.
 
@@ -51,6 +51,8 @@ Implemented on September 26, 2026: Full Screen/Grid views, an icon sidebar besid
 - Move layers with arrow keys or Shift+Arrow for faster movement.
 - Tab selects the next left-side image; Shift+Tab selects the previous one and scrolls it into view. Navigation stops at the first/last image and selects that image alone, like a normal thumbnail click. Form fields and the Listing dialog retain normal Tab focus navigation.
 - Add, duplicate, delete, select, group, resize, and reorder layers.
+- Layers has one action row: Add images, Select all, Clear, Duplicate and Delete. Smaller, Bigger and Side By Side controls are removed; scale adjustments remain in Image Size and canvas scrolling.
+- The Position group's vertical-center icon moves the selected layers together to the canvas's vertical center, preserving their sizes, horizontal positions and spacing. The Movement Lock selector is removed; Shift-drag still constrains movement to one axis.
 - Images uploaded or dropped into Layers start at 100% of the proportional canvas fit; the old hidden 32% reduction is removed. A 1576 × 1576 layer fills a 1576 × 1576 canvas at 100%. The size controls display fractional percentages and support added layers up to 500%; Close Views still use native pixel size.
 - Duplicate and copy/paste preserve the displayed layer size, rotation, flips, shadows, and prepared product cutout. Prepared copies can toggle between their original background and saved cutout.
 - Click empty space outside the canvas to deselect layers; editing controls preserve the selection.
@@ -117,7 +119,7 @@ This is a browser API and JSON import, with no automatic CPIS network connection
 - Keep uploaded image filenames without adding `Photo Studio`. The chosen format determines the extension. ZIP name collisions within each folder receive a number such as `DT (2).jpg` so every image remains available.
 - A batch assigned entirely to DSA eBay exports images directly inside `DSA eBay.zip`, without subfolders. Other or mixed-account batches contain `Main/` and `unmain/`: Normal-template images go in `unmain/`, all others in `Main/`, with both folders present even when one is empty. Layout follows actual template assignments, not the account currently being browsed. Filename collisions are numbered in either layout.
 - Batch ZIP names match the applied template's account folder, such as `Elite.zip`, `DIY.zip`, or `US Auto Nation.zip`. Mixed accounts use their folder names joined with ` + `; batches without an assigned template keep `photo-studio-batch.zip`.
-- Export prepared eBay listing images with the current-image or Export Batch controls in the floating export dock.
+- Export prepared eBay listing images with the Export current or Export Batch controls in the header.
 
 ## Run locally
 
@@ -173,7 +175,7 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 
 ## Validation
 
-The latest icon-sidebar revision passed 78 browser checks: 61 in `tests/workspace-text.browser.cjs` and 17 in `tests/background-toggle.browser.cjs`. Workspace checks cover exclusive icon panels, keyboard tab navigation, relocated Background controls, the single-line header, bottom-right view controls, floating exports visible in Grid View, account templates below all accounts, text controls, history, selection/navigation, group/copy behavior, workflow/unmain copies, font fallback, export pixels and a downloaded ZIP. A 35-image batch scrolls inside the workspace. Layout is checked at desktop, smaller desktop and mobile sizes. The initial workspace implementation also passed five existing history/layer/Listing/background suites (220 checks with the initial 47-check workspace suite); those historical results are recorded in the workspace handoff.
+The latest Layers/header revision passed 127 browser checks: 68 in `tests/workspace-text.browser.cjs` and 59 in `tests/editor-history.browser.cjs`. Workspace checks cover the simplified layer actions, group vertical centering with Undo/Redo, exclusive icon panels, keyboard tab navigation, relocated Background controls, the single-line header and its export controls, bottom-right view controls, account templates below all accounts, text editing, selection/navigation, group/copy behavior, workflow/unmain copies, font fallback, export pixels and a downloaded ZIP. A 35-image batch scrolls inside the workspace. Layout is checked at desktop, smaller desktop and mobile sizes. The initial workspace implementation passed 220 checks across six suites; the preceding icon-sidebar revision passed 78 workspace/background checks. Those historical results are recorded in the workspace handoff.
 
 `tests/background-toggle.browser.cjs` passes 17 checks with its generated fixture and 25 checks when run with the supplied `9.jpg` and `FullSet.jpg`. Real clicks and keyboard events verify pressed/enabled state, deselection, exact original-PNG restoration, cached repeated toggles, numeric-field Ctrl+B, Undo/Redo, prepared-source restoration, duplicates, groups, deleted base layers and Close View protection. Optional image paths can be passed as command-line arguments; the supplied photos remain outside the repository.
 

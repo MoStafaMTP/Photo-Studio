@@ -13,7 +13,7 @@ function readHistoryState() {
   return {
     files: files.map(cloneHistoryValue), library: cloneHistoryValue(watermarkSections), metadata: cloneHistoryValue(cpisListingContext),
     settings: {width: resizeWidth.value, height: resizeHeight.value, backgroundMode, backgroundColor: backgroundColor.value,
-      movementLock: movementLock.value, gap: watermarkGap.value, exportFormat: exportFormat.value,
+      gap: watermarkGap.value, exportFormat: exportFormat.value,
       account: listingAccount.value, material: listingMaterial.value, smart: listingSmartPrep.checked},
     selection: {activeId: files[activeIndex]?.id || null, layers: [...selectedLayerIds], batch: [...selectedBatchImageIds],
       activeWatermarkSection, activeWatermarkTemplateId, selectedWatermarkSection}
@@ -75,7 +75,7 @@ function restoreHistoryState(state) {
   backgroundMode = settings.backgroundMode; backgroundColor.value = settings.backgroundColor;
   backgroundColor.disabled = backgroundMode !== 'color';
   backgroundGroup.querySelectorAll('[data-background]').forEach(button => button.classList.toggle('active', button.dataset.background === backgroundMode));
-  movementLock.value = settings.movementLock; watermarkGap.value = watermarkSize.value = settings.gap;
+  watermarkGap.value = watermarkSize.value = settings.gap;
   exportFormat.value = settings.exportFormat; listingAccount.value = settings.account; listingMaterial.value = settings.material; listingSmartPrep.checked = settings.smart;
   activeIndex = files.findIndex(item => item.id === selection.activeId);
   if (activeIndex < 0 && files.length) activeIndex = 0;

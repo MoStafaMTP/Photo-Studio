@@ -94,11 +94,9 @@ const positionGroup = document.createElement('div');
 positionGroup.className = 'toolbar-group position-control';
 positionGroup.innerHTML = '<span class="toolbar-label">Position</span>';
 const centerHorizontal = document.createElement('button'); centerHorizontal.className = 'tool-toggle position-icon-button'; setIconControl(centerHorizontal, 'centerHorizontal', 'Center horizontally');
-const centerVertical = document.createElement('button'); centerVertical.className = 'tool-toggle position-icon-button'; setIconControl(centerVertical, 'centerVertical', 'Center vertically');
+const centerVertical = document.createElement('button'); centerVertical.className = 'tool-toggle position-icon-button'; setIconControl(centerVertical, 'centerVertical', 'Center selected layers vertically as a group');
 centerImage.classList.add('position-icon-button'); setIconControl(centerImage, 'centerBoth', 'Center horizontally and vertically');
-const movementLock = document.createElement('select'); movementLock.setAttribute('aria-label', 'Movement lock');
-movementLock.innerHTML = '<option value="none">Move freely</option><option value="x">Lock horizontal</option><option value="y">Lock vertical</option><option value="both">Lock both axes</option>';
-centerImage.remove(); positionGroup.append(centerHorizontal, centerVertical, centerImage, movementLock); rotateGroup.after(positionGroup);
+centerImage.remove(); positionGroup.append(centerHorizontal, centerImage, centerVertical); rotateGroup.after(positionGroup);
 
 const backgroundGroup = document.createElement('div'); backgroundGroup.className = 'toolbar-group background-control';
 backgroundGroup.innerHTML = '<span class="toolbar-label">BG</span><div class="background-modes"><button type="button" class="tool-toggle" data-background="none">None</button><button type="button" class="tool-toggle active" data-background="color">Color</button></div>';
@@ -112,17 +110,12 @@ layerGroup.innerHTML = `
     <button class="layer-add-button" type="button">Add images</button>
     <button class="layer-select-all" type="button">Select all</button>
     <button class="layer-clear-selection" type="button">Clear</button>
+    <button type="button" data-layer-action="duplicate"></button>
+    <button type="button" data-layer-action="remove"></button>
   </div>
   <div class="layer-drop-zone" role="button" tabindex="0"><span>↓</span><strong>Drop images here</strong></div>
   <input class="layer-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
-  <div class="layer-list"></div>
-  <div class="layer-group-actions">
-    <button type="button" data-layer-action="arrange"></button>
-    <button type="button" data-layer-action="smaller"></button>
-    <button type="button" data-layer-action="larger"></button>
-    <button type="button" data-layer-action="duplicate"></button>
-    <button type="button" data-layer-action="remove"></button>
-  </div>`;
+  <div class="layer-list"></div>`;
 backgroundGroup.after(layerGroup);
 const layerImageInput = layerGroup.querySelector('.layer-image-input');
 const layerList = layerGroup.querySelector('.layer-list');
@@ -132,11 +125,8 @@ const layerClearButton = layerGroup.querySelector('.layer-clear-selection');
 const layerDropZone = layerGroup.querySelector('.layer-drop-zone');
 setIconGraphic(layerDropZone.querySelector('span'), 'upload');
 [
-  ['arrange', 'sideBySide', 'Arrange side by side'],
-  ['smaller', 'minus', 'Make selected layers smaller'],
-  ['larger', 'plus', 'Make selected layers larger'],
   ['duplicate', 'duplicate', 'Duplicate selected layers'],
-  ['remove', 'trash', 'Remove selected layers']
+  ['remove', 'trash', 'Delete selected layers']
 ].forEach(([action, icon, label]) => setIconControl(layerGroup.querySelector(`[data-layer-action="${action}"]`), icon, label));
 let backgroundMode = 'color';
 const exportOne = document.querySelector('#export-one');
@@ -241,9 +231,6 @@ window.addEventListener('keydown', (event) => {
   if (!direction) return;
   event.preventDefault();
   if (!selectedLayerIds.size) { setStatus('Select one or more layers first.'); return; }
-  const horizontalBlocked = direction[0] && (movementLock.value === 'x' || movementLock.value === 'both');
-  const verticalBlocked = direction[1] && (movementLock.value === 'y' || movementLock.value === 'both');
-  if (horizontalBlocked || verticalBlocked) { setStatus('Movement is locked on this axis.'); return; }
   if (!keyboardMoveActive) { saveHistory(); keyboardMoveActive = true; }
   const step = event.shiftKey ? 10 : 1;
   moveSelectedLayerEntities(direction[0] * step, direction[1] * step);
@@ -1124,8 +1111,6 @@ function setLayerEntityCenter(item, id, x, y) {
 }
 function moveSelectedLayerEntities(dx, dy) {
   const item = files[activeIndex]; if (!item) return;
-  if (movementLock.value === 'x' || movementLock.value === 'both') dx = 0;
-  if (movementLock.value === 'y' || movementLock.value === 'both') dy = 0;
   getSelectedLayerEntities(item).forEach((entity) => {
     const rect = getLayerEntityRect(item, entity.id);
     setLayerEntityCenter(item, entity.id, rect.x + dx, rect.y + dy);
@@ -1380,7 +1365,6 @@ resizeWidth.addEventListener('input', () => { saveHistory(); drawActive(); }); r
 centerImage.addEventListener('click', () => { if (!selectedLayerIds.size) return; saveHistory(); centerSelectedLayerEntities('both'); drawActive(); setStatus('Selected layers centered horizontally and vertically.'); });
 centerHorizontal.addEventListener('click', () => { if (!selectedLayerIds.size) return; saveHistory(); centerSelectedLayerEntities('x'); drawActive(); setStatus('Selected layers centered horizontally.'); });
 centerVertical.addEventListener('click', () => { if (!selectedLayerIds.size) return; saveHistory(); centerSelectedLayerEntities('y'); drawActive(); setStatus('Selected layers centered vertically.'); });
-movementLock.addEventListener('change', () => setStatus(movementLock.options[movementLock.selectedIndex].textContent));
 backgroundGroup.querySelectorAll('[data-background]').forEach(button => button.addEventListener('click', () => {
   saveHistory(); backgroundMode = button.dataset.background; backgroundColor.disabled = backgroundMode !== 'color';
   backgroundGroup.querySelectorAll('[data-background]').forEach(option => option.classList.toggle('active', option === button));
@@ -1504,18 +1488,6 @@ function clearLayerSelection() {
   selectedLayerIds.clear(); renderLayerList(); syncSelectedLayerControls(); drawActive(); setStatus('Layer selection cleared.');
 }
 layerClearButton.addEventListener('click', clearLayerSelection);
-layerGroup.querySelector('[data-layer-action="arrange"]').addEventListener('click', () => {
-  if (selectedLayerIds.size < 2) { setStatus('Select at least two layers to arrange.'); return; }
-  saveHistory(); arrangeSelectedLayers();
-});
-layerGroup.querySelector('[data-layer-action="smaller"]').addEventListener('click', () => {
-  if (!selectedLayerIds.size) { setStatus('Select one or more layers first.'); return; }
-  saveHistory(); scaleSelectedLayerEntities(.9); renderLayerList(); syncSelectedLayerControls(); drawActive(); setStatus('Selected layers made smaller.');
-});
-layerGroup.querySelector('[data-layer-action="larger"]').addEventListener('click', () => {
-  if (!selectedLayerIds.size) { setStatus('Select one or more layers first.'); return; }
-  saveHistory(); scaleSelectedLayerEntities(1.1); renderLayerList(); syncSelectedLayerControls(); drawActive(); setStatus('Selected layers made larger.');
-});
 layerGroup.querySelector('[data-layer-action="duplicate"]').addEventListener('click', () => {
   if (!selectedLayerIds.size) { setStatus('Select one or more layers first.'); return; }
   saveHistory(); duplicateSelectedLayers();
@@ -1544,7 +1516,6 @@ canvasWrap.addEventListener('pointerdown', (event) => {
   }
   if (!selectedLayerIds.has(hitId)) selectedLayerIds = new Set([hitId]);
   renderLayerList(); syncSelectedLayerControls(); drawActive();
-  if (movementLock.value === 'both') { setStatus('Layer movement is locked.'); return; }
   saveHistory();
   const positions = getSelectedLayerEntities(item).map((entity) => { const entityRect = getLayerEntityRect(item, entity.id); return {id: entity.id, x: entityRect.x, y: entityRect.y}; });
   imageDrag = {startX: event.clientX, startY: event.clientY, scaleX, scaleY, positions, shiftAxis: null};
@@ -1559,8 +1530,6 @@ canvasWrap.addEventListener('pointermove', (event) => {
     if (imageDrag.shiftAxis === 'x') dy = 0;
     if (imageDrag.shiftAxis === 'y') dx = 0;
   } else imageDrag.shiftAxis = null;
-  if (movementLock.value === 'x' || movementLock.value === 'both') dx = 0;
-  if (movementLock.value === 'y' || movementLock.value === 'both') dy = 0;
   imageDrag.positions.forEach((position) => setLayerEntityCenter(item, position.id, position.x + dx, position.y + dy));
   drawActive();
 });
