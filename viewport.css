@@ -149,6 +149,8 @@ html,body { width:100%; height:100%; overflow:hidden; }
 .listing-close { flex:none; width:32px; height:32px; padding:0; border:0; border-radius:50%; background:#e5e5ea; color:#636366; cursor:pointer; font:500 22px/30px -apple-system,BlinkMacSystemFont,sans-serif; }
 .listing-close:hover { background:#d8d8dd; color:#1c1c1e; }
 .listing-questions { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:18px 26px; }
+.listing-questions.single-question { grid-template-columns:1fr; }
+.listing-field[hidden] { display:none!important; }
 .listing-field { display:grid; gap:9px; padding:14px; border:1px solid #d1d1d666; border-radius:15px; background:#fff; box-shadow:0 2px 8px #00000008; }
 .listing-field > span { display:flex; align-items:center; gap:8px; color:#3a3a3c; font-size:12px; font-weight:650; }
 .listing-field > span b { display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:#e5f1ff; color:#007aff; font-size:11px; }

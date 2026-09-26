@@ -54,6 +54,7 @@ Detailed handoffs are available in:
 ### Listing workflow
 
 - Select an eBay account and product material.
+- DSA eBay skips material selection and uses its single `DSA Seat Factory - eBay` template for every image category. Switching to another account restores the material question and any previous choice.
 - Import resolved CPIS metadata through **Import CPIS JSON** or `window.PhotoStudioIntegration`; metadata takes priority over filenames.
 - Detect `DB`, `PB`, `DPB`, `DT`, `PT`, `DPT`, `DTB`, `PTB`, and `DPTB` filename codes. `Full Set` (also `Full_Set`, `Full-Set`, and `FullSet`) is an alias for `DPTB` and follows its material-specific Main template rules.
 - Support DOPT/DOPB as shared image types and `main`, `unmain`, `cv`, `io`, and `numbered` subtypes. Only primary `main` images use Main/Passenger templates; all other roles use Normal unless CPIS supplies an explicit template choice.
@@ -146,6 +147,8 @@ After adding or replacing bundled PNGs, update the library entries in `script.js
 - Close View images are centered at native pixel size on the configured output canvas; 100% means one source pixel per output pixel. They are exempt from safe-area fitting and the 50px inset so that their original size and background are preserved. A source larger than the output canvas can extend beyond its edges; increase the output dimensions when needed. Manual enlargement is available, but shrinking below 100% and background removal are blocked for Close View sources and their layer/batch copies.
 
 ## Validation
+
+`tests/listing-dsa.browser.cjs` passes 21 checks for upload with DSA preselected, hidden material controls, ready/apply behavior with no material, all image categories sharing the DSA template, template-manager display, stored-material independence, account switching, Undo/Redo, Close Views, CPIS metadata and focus handling. Other accounts retain material-specific matching.
 
 `tests/subject-preservation.browser.cjs` passes 23 checks covering white/light-gray subject interiors, subtle product boundaries, subjects touching a corner, one/two-pixel details, translucent regions, graded backgrounds and uncertain-cutout fallback. It also checks the actual Remove BG action, repeated toggles, Undo/Redo, duplicates, added layers, Remove All BG, Close View protection and transparent PNG export. These use generated fixtures; no user-supplied failing photo was available for this change.
 

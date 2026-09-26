@@ -22,6 +22,8 @@ The workflow now:
 
 The Listing dialog uses a single blue (`#007aff`) **Apply Workflow** button. Apply the workflow first, review any manual adjustments in the editor, then export from the header.
 
+**DSA eBay:** material selection is hidden and disabled for this account. Its `DSA Seat Factory - eBay` template is selected directly for Main, Passenger Side and Normal roles, and the plan can become ready with no material selected. The account question expands to the available width, the template manager works without a material, and reopening Listing focuses a visible control. Returning to another account restores the material question and its previous value. This behavior also restores correctly through Undo/Redo. Close View protections, explicit CPIS template overrides, generated outputs and export rules continue to apply.
+
 Export Batch names the ZIP after the account folder of the templates actually assigned to the exported images (for example, `Elite.zip`). Mixed accounts use the distinct folder names joined with ` + `; a batch without assigned templates keeps `photo-studio-batch.zip`. Browsing another template folder does not change the export name.
 
 Image exports keep the uploaded filename stem with the selected JPG/PNG/WebP extension, without the former `-photo-studio` suffix. ZIPs always contain `Main/` and `unmain/` directories. The actual assigned template determines the destination: Normal goes in `unmain/`, everything else in `Main/`, including after manual template changes. Conflicting names within a folder receive a numeric suffix to prevent replacement during extraction; equal names in different folders are preserved.
@@ -166,6 +168,8 @@ History covers layer and batch uploads, duplication and deletion, stacking, size
 As in earlier phases, uploaded images and editing state are not persisted after the page closes. Template safe-area settings are persisted in the browser.
 
 ## Validation performed
+
+`tests/listing-dsa.browser.cjs` passes 21 checks for DSA preselection/upload, blank-material readiness and application, hidden fields and manager content, all categories sharing one template, independence from stored material choices, account switching, Undo/Redo, Close Views, supplied CPIS metadata/explicit-template validation and keyboard focus. The 39-check listing-output and 59-check history suites also pass.
 
 Tab navigation passed 14 focused browser checks using actual keyboard events: next/previous selection, thumbnail focus and scrolling, first/last boundaries, watermark selection scope, retained image edits and Undo/Redo, native field/dialog focus, modifier exclusions, and single/empty batches. No browser errors were reported.
 

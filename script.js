@@ -1681,6 +1681,10 @@ const listingDialog = listingPanel.querySelector('.listing-dialog');
 const listingCloseButton = document.querySelector('#close-listing');
 const listingAccount = document.querySelector('#listing-account');
 const listingMaterial = document.querySelector('#listing-material');
+const listingMaterialField = listingMaterial.closest('.listing-field');
+const listingQuestions = document.querySelector('.listing-questions');
+const listingIntroduction = listingDialog.querySelector('.listing-dialog-header p');
+const defaultListingIntroduction = listingIntroduction.textContent;
 const listingPlan = document.querySelector('#listing-plan');
 const listingPlanSummary = document.querySelector('#listing-plan-summary');
 const listingApplyButton = document.querySelector('#listing-apply');
@@ -1708,6 +1712,7 @@ function detectListingImageType(fileName) {
 function normalizeListingTemplateName(name) {
   return String(name || '').replace(/\.[^/.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
+function listingRequiresMaterial(sectionIndex) { return WATERMARK_SECTION_NAMES[sectionIndex] !== 'DSA eBay'; }
 function findListingTemplate(sectionIndex, requestedName, {allowAccountDefault = true} = {}) {
   const section = watermarkSections[sectionIndex];
   if (!section) return {template: null, fallback: false};
@@ -1835,9 +1840,12 @@ async function renderListingTemplateManager() {
   const templateEntries = plan.section && plan.materialRule ? uniqueListingTemplates(plan) : [];
   if (!templateEntries.length) {
     const emptyMessage = document.createElement('p'); emptyMessage.className = 'listing-template-manager-empty';
-    emptyMessage.textContent = 'Choose an account and material to manage the templates used by this batch.';
+    const settingsReady = Boolean(plan.section && plan.materialRule);
+    emptyMessage.textContent = settingsReady
+      ? (files.length ? 'No matching templates are available for this batch.' : 'Upload images to review the templates used by this account.')
+      : 'Choose an account and material to manage the templates used by this batch.';
     listingTemplateManagerGrid.append(emptyMessage);
-    listingTemplateManagerSummary.textContent = 'Choose an account and material';
+    listingTemplateManagerSummary.textContent = settingsReady ? (files.length ? 'No templates available' : 'Upload images to begin') : 'Choose an account and material';
     return;
   }
   listingTemplateManagerSummary.textContent = `${templateEntries.length} template${templateEntries.length === 1 ? '' : 's'} · safe areas saved`;
@@ -1888,7 +1896,10 @@ async function renderListingTemplateManager() {
 function createListingPlan() {
   const hasAccount = Boolean(cpisListingContext) || listingAccount.value !== '';
   const sectionIndex = cpisListingContext?.sectionIndex ?? (hasAccount ? Number(listingAccount.value) : -1);
-  const materialRule = LISTING_MATERIAL_RULES[cpisListingContext?.materialKey || listingMaterial.value] || null;
+  const requiresMaterial = listingRequiresMaterial(sectionIndex);
+  const accountTemplate = requiresMaterial ? null : DEFAULT_WATERMARK_LIBRARY[sectionIndex].files[0].replace(/\.[^/.]+$/, '');
+  const materialRule = requiresMaterial ? LISTING_MATERIAL_RULES[cpisListingContext?.materialKey || listingMaterial.value] || null
+    : {label: 'All materials', templates: {main: accountTemplate, passenger: accountTemplate, normal: accountTemplate}};
   const rowForItem = (item) => {
     let detection, metadataError = null;
     try {
@@ -1929,6 +1940,7 @@ function createListingPlan() {
   return {
     sectionIndex,
     section: hasAccount ? watermarkSections[sectionIndex] : null,
+    requiresMaterial,
     materialRule,
     rows,
     missingCount,
@@ -1991,8 +2003,13 @@ function renderListingPreview() {
 refreshListingPreview = renderListingPreview;
 
 function syncCPISMetadataControls() {
+  const sectionIndex = cpisListingContext?.sectionIndex ?? (listingAccount.value === '' ? -1 : Number(listingAccount.value));
+  const requiresMaterial = listingRequiresMaterial(sectionIndex);
   listingAccount.disabled = listingBusy || Boolean(cpisListingContext);
-  listingMaterial.disabled = listingBusy || Boolean(cpisListingContext);
+  listingMaterial.disabled = !requiresMaterial || listingBusy || Boolean(cpisListingContext);
+  listingMaterialField.hidden = !requiresMaterial;
+  listingQuestions.classList.toggle('single-question', !requiresMaterial);
+  listingIntroduction.textContent = requiresMaterial ? defaultListingIntroduction : 'DSA eBay uses its single template for every material.';
   document.querySelector('#listing-import-metadata').disabled = listingBusy || !files.length;
   document.querySelector('#listing-clear-metadata').hidden = !cpisListingContext;
   const label = document.querySelector('#listing-metadata-status');
@@ -2084,7 +2101,7 @@ function getCPISMetadata() {
 }
 function getCPISPlan() {
   const plan = createListingPlan();
-  return {ready: plan.ready, account: plan.section?.name || null, material: cpisListingContext?.material || plan.materialRule?.label || null,
+  return {ready: plan.ready, account: plan.section?.name || null, material: cpisListingContext?.material || (plan.requiresMaterial ? plan.materialRule?.label : null) || null,
     color: cpisListingContext?.color || null,
     images: plan.rows.map(row => ({imageId: row.item.id, id: row.item.listingMetadata?.id || null,
       filename: row.pendingGeneration ? listingSourceName(row.item) : row.item.file.name,
@@ -2111,7 +2128,7 @@ function openListingPanel() {
   listingOpenButton.classList.add('active');
   listingOpenButton.setAttribute('aria-expanded', 'true');
   renderListingPreview();
-  window.requestAnimationFrame(() => (listingAccount.value ? listingMaterial : listingAccount).focus());
+  window.requestAnimationFrame(() => (!listingAccount.value ? listingAccount : listingMaterial.disabled ? listingSmartPrep : listingMaterial).focus());
 }
 function closeListingPanel() {
   if (listingBusy) return;
